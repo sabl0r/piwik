@@ -637,7 +637,7 @@ class Piwik_Archive
             }
             
             if (!empty($reportsToArchive)) {
-                if ($this->isArchivingDisabled()) {
+                if (!$this->isArchivingDisabled()) {
                     $this->getArchiveIdsAfterLaunching($reportsToArchive);
                 } else {
                     $this->getArchiveIdsWithoutLaunching($reportsToArchive);
