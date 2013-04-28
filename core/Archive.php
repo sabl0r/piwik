@@ -14,7 +14,7 @@
  *
  * Example:
  * <pre>
- *        $archive = Piwik_Archive::build($idSite = 1, $period = 'week', '2008-03-08' );
+ *        $archive = Piwik_Archive::build($idSite = 1, $period = 'week', '2008-03-08');
  *        $dataTable = $archive->getDataTable('Provider_hostnameExt');
  *        $dataTable->queueFilter('ReplaceColumnNames');
  *        return $dataTable;
@@ -22,7 +22,7 @@
  *
  * Example bis:
  * <pre>
- *        $archive = Piwik_Archive::build($idSite = 3, $period = 'day', $date = 'today' );
+ *        $archive = Piwik_Archive::build($idSite = 3, $period = 'day', $date = 'today');
  *        $nbVisits = $archive->getNumeric('nb_visits');
  *        return $nbVisits;
  * </pre>
@@ -252,13 +252,21 @@ class Piwik_Archive
     private $forceIndexedByDate;
     
     /**
-     * TODO
+     * Cache of Piwik_ArchiveProcessing instances used when launching the archiving
+     * process.
+     * 
+     * @var array
      */
     private $processingCache = array();
     
     /**
      * Constructor.
-     * TODO
+     * 
+     * @param array|int $siteIds List of site IDs to query data for.
+     * @param array|Piwik_Period $periods List of periods to query data for.
+     * @param Piwik_Segment $segment The segment used to narrow the visits set.
+     * @param bool $forceIndexedBySite Whether to force index the result of a query by site ID.
+     * @param bool $forceIndexedByDate Whether to force index the result of a query by period.
      */
     public function __construct($siteIds, $periods, Piwik_Segment $segment, $forceIndexedBySite = false,
                                   $forceIndexedByDate = false)
@@ -271,7 +279,7 @@ class Piwik_Archive
     }
     
     /**
-     * TODO
+     * Destructor.
      */
     public function __destruct()
     {
@@ -282,15 +290,15 @@ class Piwik_Archive
     }
 
     /**
-     * Builds an Archive object or returns the same archive if previously built.
+     * Builds an Archive object using query parameter values.
      *
-     * @param int|string $idSite                 integer, or comma separated list of integer
-     * @param string $period                 'week' 'day' etc.
-     * @param Piwik_Date|string $strDate                'YYYY-MM-DD' or magic keywords 'today' @see Piwik_Date::factory()
-     * @param bool|string $segment                Segment definition - defaults to false for Backward Compatibility
-     * @param bool|string $_restrictSitesToLogin  Used only when running as a scheduled task
+     * @param int|string $idSite Integer, or comma separated list of integer site IDs.
+     * @param string $period 'day', 'week', 'month', 'year' or 'range'
+     * @param Piwik_Date|string $strDate 'YYYY-MM-DD', magic keywords (ie, 'today'; @see Piwik_Date::factory())
+     *                                   or date range (ie, 'YYYY-MM-DD,YYYY-MM-DD').
+     * @param false|string $segment Segment definition - defaults to false for backward compatibility.
+     * @param false|string $_restrictSitesToLogin Used only when running as a scheduled task.
      * @return Piwik_Archive
-     * TODO modify
      */
     public static function build($idSite, $period, $strDate, $segment = false, $_restrictSitesToLogin = false)
     {
@@ -375,11 +383,13 @@ class Piwik_Archive
      * Returns the value of the element $name from the current archive 
      * The value to be returned is a numeric value and is stored in the archive_numeric_* tables
      *
-     * @param string  $name  For example Referers_distinctKeywords
-     * @return float|int|false  False if no value with the given name
-     * TODO: modify
+     * @param string|array $names One or more archive names, eg, 'nb_visits', 'Referers_distinctKeywords',
+     *                            etc.
+     * @return numeric|array|false False if no value with the given name, numeric if only one site
+     *                             and date and we're not forcing an index, and array if multiple
+     *                             sites/dates are queried.
      */
-    public function getNumeric( $names )
+    public function getNumeric($names)
     {
         $rows = $this->get($names, 'archive_numeric');
         return $this->createSimpleGetResult($rows, $names, $createDataTable = false, $isSimpleTable = true, $isNumeric = true);
@@ -396,7 +406,7 @@ class Piwik_Archive
      * @return mixed  False if no value with the given name
      * TODO: modify
      */
-    public function getBlob( $names, $idSubTable = null, &$blobCache = null ) // TODO: parameters should start/end w/ spaces
+    public function getBlob($names, $idSubTable = null, &$blobCache = null)
     {
         $rows = $this->get($names, 'archive_blob', $idSubTable, $blobCache);
         return $this->createSimpleGetResult($rows, $names, $createDataTable = false);
@@ -408,7 +418,7 @@ class Piwik_Archive
      * @return Piwik_DataTable
      * TODO: modify
      */
-    public function getDataTableFromNumeric( $names )
+    public function getDataTableFromNumeric($names)
     {
         $rows = $this->get($names, 'archive_numeric');
         return $this->createSimpleGetResult($rows, $names, $createDataTable = true, $isSimpleTable = true, $isNumeric = true);
@@ -427,7 +437,7 @@ class Piwik_Archive
      * TODO: modify
      * TODO: only allows one name right now, change?
      */
-    public function getDataTable( $name, $idSubTable = null )
+    public function getDataTable($name, $idSubTable = null)
     {
         $rows = $this->get($name, 'archive_blob', $idSubTable);
         
@@ -461,7 +471,7 @@ class Piwik_Archive
      * TODO: should this have an idSubtable param? look if its ever called w/ it.
      * TODO: rename idSubTable to idSubtable.
      */
-    public function getDataTableExpanded( $name, $idSubTable = null, $addMetadataSubtableId = true )
+    public function getDataTableExpanded($name, $idSubTable = null, $addMetadataSubtableId = true)
     {
         // cache all blobs of this type using one SQL request
         $blobCache = array();
@@ -489,7 +499,7 @@ class Piwik_Archive
         foreach ($rows as $idsite => $dates) {
             foreach ($dates as $dateRange => $table) {
                 $tableMonth = $this->getTableMonthFromDateRange($dateRange);
-                // TODO: don't need index by site/range now. remove it.
+                
                 $this->fetchSubTables($table, $name, $idsite, $dateRange, $blobCache, $addMetadataSubtableId);
                 $table->enableRecursiveFilters();
             }
@@ -507,7 +517,7 @@ class Piwik_Archive
      *       now, can only do one name at a time.
      * does breadth first search
      */
-    private function fetchSubTables( $table, $name, $idSite, $dateRange, $blobCache, $addMetadataSubtableId = true )
+    private function fetchSubTables($table, $name, $idSite, $dateRange, $blobCache, $addMetadataSubtableId = true)
     {
         foreach ($table->getRows() as $row) {
             $sid = $row->getIdSubDataTable();
@@ -539,7 +549,7 @@ class Piwik_Archive
     /**
      * TODO
      */
-    private function checkBlobCache( &$result, $archiveNames, $blobCache )
+    private function checkBlobCache(&$result, $archiveNames, $blobCache)
     {
         foreach ($this->siteIds as $idSite) {
             foreach ($this->periods as $subperiod) {
@@ -560,7 +570,7 @@ class Piwik_Archive
      * TODO
      * $idSubTable can be 'all' to get all tables like X
      */
-    private function get( $archiveNames, $archiveTableType, $idSubTable = null, &$blobCache = null )
+    private function get($archiveNames, $archiveTableType, $idSubTable = null, &$blobCache = null)
     {
         $result = array();
         
@@ -654,7 +664,7 @@ class Piwik_Archive
     /**
      * TODO
      */
-    private function getArchiveIds( $archiveNames )
+    private function getArchiveIds($archiveNames)
     {
         $requestedReports = $this->getRequestedReports($archiveNames);
         
@@ -698,7 +708,7 @@ class Piwik_Archive
     /**
      * TODO
      */
-    private function getArchiveIdsAfterLaunching( $requestedReports )
+    private function getArchiveIdsAfterLaunching($requestedReports)
     {
         $result = array();
         $today = Piwik_Date::today();
@@ -779,7 +789,7 @@ class Piwik_Archive
     /**
      * TODO
      */
-    private function getArchiveIdsWithoutLaunching( $requestedReports )
+    private function getArchiveIdsWithoutLaunching($requestedReports)
     {
         $piwikTables = Piwik::getTablesInstalled(); // TODO: will this be too slow?
         
@@ -828,7 +838,7 @@ class Piwik_Archive
                 $idSite = (int)$row['idsite'];
                 
                 $plugin = Piwik_ArchiveProcessing::getPluginBeingProcessed($row['name']);
-                $this->idarchives[$plugin][$dateStr] = $row['idarchive']; // TODO: any way to get isThereSomeVisits w/ this optimization?
+                $this->idarchives[$plugin][$dateStr] = $row['idarchive'];
             }
             
             if (!empty($archiveIds)) {
@@ -842,7 +852,7 @@ class Piwik_Archive
     /**
      * TODO
      */
-    private function getNameCondition( $requestedReports )
+    private function getNameCondition($requestedReports)
     {
         // the flags used to tell how the archiving process for a specific archive was completed,
         // if it was completed
@@ -888,7 +898,7 @@ class Piwik_Archive
     /**
      * TODO
      */
-    private function getTableMonthFromDateRange( $dateRange )
+    private function getTableMonthFromDateRange($dateRange)
     {
         return str_replace('-', '_', substr($dateRange, 0, 7));
     }
@@ -896,7 +906,7 @@ class Piwik_Archive
     /**
      * TODO
      */
-    public function getRequestedReports( $archiveNames )
+    public function getRequestedReports($archiveNames)
     {
         $result = array();
         foreach ($archiveNames as $name) {
@@ -908,7 +918,7 @@ class Piwik_Archive
     /**
      * TODO
      */
-    public static function getRequestedReport( $archiveName )
+    public static function getRequestedReport($archiveName)
     {
         // Core metrics are always processed in Core, for the requested date/period/segment
         if (in_array($archiveName, Piwik_ArchiveProcessing::getCoreMetrics())
@@ -935,7 +945,7 @@ class Piwik_Archive
     /**
      * TODO
      */
-    private function createSimpleGetResult( $rows, $names, $createDataTable, $isSimpleTable = true, $isNumeric = false )
+    private function createSimpleGetResult($rows, $names, $createDataTable, $isSimpleTable = true, $isNumeric = false)
     {
         if (!is_array($names)) {
             $names = array($names);
@@ -1141,7 +1151,7 @@ class Piwik_Archive
         return Piwik_ArchiveProcessing::isArchivingDisabledFor($this->segment, $this->getPeriodLabel());
     }
     
-    private function uncompress( $data )
+    private function uncompress($data)
     {
         return @gzuncompress($data);
     }
