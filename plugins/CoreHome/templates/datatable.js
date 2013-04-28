@@ -71,8 +71,8 @@ dataTable.prototype =
     //Reset DataTable filters (used before a reload or view change)
     resetAllFilters: function () {
         var self = this;
-        var FiltersToRestore = new Array();
-        filters = [
+        var FiltersToRestore = [];
+        var filters = [
             'filter_column',
             'filter_pattern',
             'filter_column_recursive',
@@ -99,7 +99,7 @@ dataTable.prototype =
     //Restores the filters to the values given in the array in parameters
     restoreAllFilters: function (FiltersToRestore) {
         var self = this;
-        for (key in FiltersToRestore) {
+        for (var key in FiltersToRestore) {
             self.param[key] = FiltersToRestore[key];
         }
     },
@@ -230,6 +230,7 @@ dataTable.prototype =
         self.handleColumnDocumentation(domElem);
         self.handleReportDocumentation(domElem);
         self.handleRowActions(domElem);
+		self.handleCellTooltips(domElem);
         self.handleRelatedReports(domElem);
         self.handleTriggeredEvents(domElem);
     },
@@ -423,6 +424,9 @@ dataTable.prototype =
                             self.param.filter_column = 'label';
                             self.param.filter_pattern = keyword;
                         }
+						
+						delete self.param.totalRows;
+						
                         self.reloadAjaxDataTable(true, callbackSuccess);
                     }
                 );
@@ -457,7 +461,7 @@ dataTable.prototype =
                 var offset = 1 + Number(self.param.filter_offset);
                 var offsetEnd = Number(self.param.filter_offset) + Number(self.param.filter_limit);
                 var totalRows = Number(self.param.totalRows);
-                offsetEndDisp = offsetEnd;
+                var offsetEndDisp = offsetEnd;
 
                 if (self.param.keep_summary_row == 1) --totalRows;
 
@@ -878,7 +882,17 @@ dataTable.prototype =
                     str += '&filter_limit=' + filter_limit;
                 }
                 if (label) {
-                    str += '&label=' + encodeURIComponent(label);
+                    if (self.param.is_multi_evolution) {
+                        label = label.split(',');
+                    }
+                    
+                    if (label instanceof Array) {
+                        for (var i = 0; i != label.length; ++i) {
+                            str += '&label[]=' + encodeURIComponent(label[i]);
+                        }
+                    } else {
+                        str += '&label=' + encodeURIComponent(label);
+                    }
                 }
                 return str;
             }
@@ -953,6 +967,7 @@ dataTable.prototype =
                 close();
                 self.param[paramName] = 1 - self.param[paramName];
                 self.param.filter_offset = 0;
+                delete self.param.totalRows;
                 if (callbackAfterToggle) callbackAfterToggle();
                 self.reloadAjaxDataTable(true, callbackSuccess);
                 var data = {};
@@ -990,12 +1005,12 @@ dataTable.prototype =
                     self.param.enable_filter_excludelowpop = 0;
                 }
                 if (Number(self.param.enable_filter_excludelowpop) != 0) {
-                    string = getText('CoreHome_IncludeRowsWithLowPopulation_js', true);
+                    var string = getText('CoreHome_IncludeRowsWithLowPopulation_js', true);
                     self.param.enable_filter_excludelowpop = 1;
                     iconHighlighted = true;
                 }
                 else {
-                    string = getText('CoreHome_ExcludeRowsWithLowPopulation_js');
+                    var string = getText('CoreHome_ExcludeRowsWithLowPopulation_js');
                     self.param.enable_filter_excludelowpop = 0;
                 }
                 $(this).html(string);
@@ -1185,6 +1200,9 @@ dataTable.prototype =
 
                     self.param.idSubtable = idSubTable;
                     self.param.action = self.param.controllerActionCalledWhenRequestSubTable;
+					
+					delete self.param.totalRows;
+					
                     self.reloadAjaxDataTable(false, function(response) {
                         self.dataTableLoaded(response, divIdToReplaceWithSubTable);
                     });
@@ -1319,6 +1337,19 @@ dataTable.prototype =
     handleRowActions: function (domElem) {
         this.doHandleRowActions(domElem.find('table > tbody > tr'));
     },
+	
+	handleCellTooltips: function(domElem) {
+		domElem.find('span.cell-tooltip').tooltip({
+			track: true,
+			items: 'span',
+			content: function() {
+				return $(this).data('tooltip');
+			},
+			show: false,
+			hide: false,
+			tooltipClass: 'small'
+		});
+	},
 
     handleRelatedReports: function (domElem) {
         var self = this,
@@ -1443,7 +1474,9 @@ dataTable.prototype =
                     }
                     // reposition and show the actions
                     self.repositionRowActions(tr);
-                    actionsDom.show();
+                    if ($(window).width() >= 600) {
+                        actionsDom.show();
+                    }
                 },
                 function () {
                     if (actionsDom !== null) {
@@ -1476,7 +1509,7 @@ dataTable.prototype =
 
             actionEl.click((function (action, el) {
                 return function (e) {
-                    $(this).blur();
+                    $(this).blur().tooltip('close');
                     container.hide();
                     if (typeof actionInstances[action.name].onClick == 'function') {
                         return actionInstances[action.name].onClick(el, tr, e);
@@ -1583,6 +1616,7 @@ actionDataTable.prototype =
     notifyWidgetParametersChange: dataTable.prototype.notifyWidgetParametersChange,
     handleRelatedReports: dataTable.prototype.handleRelatedReports,
     handleTriggeredEvents: dataTable.prototype.handleTriggeredEvents,
+	handleCellTooltips: dataTable.prototype.handleCellTooltips,
     _findReportHeader: dataTable.prototype._findReportHeader,
 
     //initialisation of the actionDataTable
@@ -1634,6 +1668,7 @@ actionDataTable.prototype =
         self.handleReportDocumentation(domElem);
         self.handleRelatedReports(domElem);
         self.handleTriggeredEvents(domElem);
+		self.handleCellTooltips(domElem);
     },
 
     //see dataTable::applyCosmetics
@@ -1830,7 +1865,7 @@ actionDataTable.prototype =
         }
 
         var re = /subDataTable_(\d+)/;
-        ok = re.exec(self.parentId);
+        var ok = re.exec(self.parentId);
         if (ok) {
             self.parentId = ok[1];
         }
@@ -1861,11 +1896,11 @@ function getLevelFromClass(style) {
 //helper function for actionDataTable
 function getNextLevelFromClass(style) {
     if (!style || typeof style == "undefined") return 0;
-    currentLevel = getLevelFromClass(style);
-    newLevel = currentLevel;
+    var currentLevel = getLevelFromClass(style);
+    var newLevel     = currentLevel;
     // if this is not a row to process so
     if (style.indexOf('rowToProcess') < 0) {
-        newLevel = currentLevel + 1;
+        newLevel     = currentLevel + 1;
     }
     return newLevel;
 }

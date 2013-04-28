@@ -179,6 +179,9 @@ _S3_LOG_FORMAT = (
     '\S+ \S+ \S+ \S+ "\S+ (?P<path>.*?) \S+" (?P<status>\S+) \S+ (?P<length>\S+) '
     '\S+ \S+ \S+ "(?P<referrer>.*?)" "(?P<user_agent>.*?)"'
 )
+_ICECAST2_LOG_FORMAT = ( _NCSA_EXTENDED_LOG_FORMAT +
+    ' (?P<session_time>\S+)'
+)
 
 FORMATS = {
     'common': RegexFormat('common', _COMMON_LOG_FORMAT),
@@ -187,6 +190,7 @@ FORMATS = {
     'common_complete': RegexFormat('common_complete', _HOST_PREFIX + _NCSA_EXTENDED_LOG_FORMAT),
     'iis': IisFormat(),
     's3': RegexFormat('s3', _S3_LOG_FORMAT),
+    'icecast2': RegexFormat('icecast2', _ICECAST2_LOG_FORMAT),
 }
 
 
@@ -398,6 +402,11 @@ class Configuration(object):
             '--invalidate-dates', dest='invalidate_dates', default=None,
             help="Invalidate reports for the specified dates (format: YYYY-MM-DD,YYYY-MM-DD,...). "
                  "By default, all dates found in the logs will be invalidated.",
+        )
+        option_parser.add_option(
+            '--force-lowercase-path', dest='force_lowercase_path', default=False, action='store_true',
+            help="Make URL path lowercase so paths with the same letters but different cases are "
+                 "treated the same."
         )
         return option_parser
 
@@ -1225,6 +1234,9 @@ class Hit(object):
         for key, value in kwargs.iteritems():
             setattr(self, key, value)
         super(Hit, self).__init__()
+        
+        if config.options.force_lowercase_path:
+            self.full_path = self.full_path.lower()
 
 
 class Parser(object):
@@ -1437,11 +1449,14 @@ class Parser(object):
             except (ValueError, IndexError):
                 # Some lines or formats don't have a length (e.g. 304 redirects, IIS logs)
                 hit.length = 0
-                
+
             try:
-			    hit.generation_time_milli = int(match.group('generation_time_micro')) / 1000
+                hit.generation_time_milli = int(match.group('generation_time_milli'))
             except IndexError:
-                hit.generation_time_milli = 0
+                try:
+                    hit.generation_time_milli = int(match.group('generation_time_micro')) / 1000
+                except IndexError:
+                    hit.generation_time_milli = 0
 
             if config.options.log_hostname:
                 hit.host = config.options.log_hostname

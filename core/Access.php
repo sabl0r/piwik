@@ -71,7 +71,7 @@ class Piwik_Access
      *
      * @var array
      */
-    static private $availableAccess = array('noaccess', 'view', 'admin', 'superuser');
+    private static $availableAccess = array('noaccess', 'view', 'admin', 'superuser');
 
     /**
      * Authentification object (see Piwik_Auth)
@@ -87,7 +87,7 @@ class Piwik_Access
      *
      * @return array
      */
-    static public function getListAccess()
+    public static function getListAccess()
     {
         return self::$availableAccess;
     }
@@ -95,7 +95,7 @@ class Piwik_Access
     /**
      * Constructor
      */
-    function __construct()
+    public function __construct()
     {
         $this->idsitesByAccess = array(
             'view'      => array(),
@@ -147,14 +147,14 @@ class Piwik_Access
 
         // we join with site in case there are rows in access for an idsite that doesn't exist anymore
         // (backward compatibility ; before we deleted the site without deleting rows in _access table)
-        $accessRaw = self::getRawSitesWithSomeViewAccess($this->login);
+        $accessRaw = $this->getRawSitesWithSomeViewAccess($this->login);
         foreach ($accessRaw as $access) {
             $this->idsitesByAccess[$access['access']][] = $access['idsite'];
         }
         return true;
     }
 
-    static public function getRawSitesWithSomeViewAccess($login)
+    public function getRawSitesWithSomeViewAccess($login)
     {
         return Piwik_FetchAll(self::getSqlAccessSite("access, t2.idsite"), $login);
     }
@@ -165,7 +165,7 @@ class Piwik_Access
      * @param string $select  Columns or expression to SELECT FROM table, eg. "MIN(ts_created)"
      * @return string  SQL query
      */
-    static public function getSqlAccessSite($select)
+    public static function getSqlAccessSite($select)
     {
         return "SELECT " . $select . "
 						  FROM " . Piwik_Common::prefixTable('access') . " as t1
@@ -230,6 +230,17 @@ class Piwik_Access
     public function getTokenAuth()
     {
         return $this->token_auth;
+    }
+    
+    /**
+     * Returns the super user's login.
+     * 
+     * @return string
+     */
+    public function getSuperUserLogin()
+    {
+        $superuser = Piwik_Config::getInstance()->superuser;
+        return $superuser['login'];
     }
 
     /**

@@ -56,7 +56,7 @@ var broadcast = {
      * Initializes broadcast object
      * @return {void}
      */
-    init: function () {
+    init: function (noLoadingMessage) {
         if (broadcast._isInit) {
             return;
         }
@@ -66,7 +66,9 @@ var broadcast = {
         // The callback is called at once by present location.hash
         $.history.init(broadcast.pageload, {unescape: true});
 
-        piwikHelper.showAjaxLoading();
+        if(noLoadingMessage != true) {
+            piwikHelper.showAjaxLoading();
+        }
     },
 
     /**
@@ -96,7 +98,14 @@ var broadcast = {
         // hash doesn't contain the first # character.
         if (hash) {
 
-            var hashParts = hash.split('&popover=');
+            if (/^popover=/.test(hash)) {
+                var hashParts = [
+                    '',
+                    hash.replace(/^popover=/, '')
+                ];
+            } else {
+                var hashParts = hash.split('&popover=');
+            }
             var hashUrl = hashParts[0];
             var popoverParam = '';
             if (hashParts.length > 1) {
@@ -150,6 +159,7 @@ var broadcast = {
 
         } else {
             // start page
+            Piwik_Popover.close();
             $('#content').empty();
         }
     },
@@ -228,7 +238,7 @@ var broadcast = {
      * NOTE: This method will refresh the page with new values.
      *
      * @param {string} str  url with parameters to be updated
-     * @param {bool} showAjaxLoading whether to show the ajax loading gif or not.
+     * @param {boolean} showAjaxLoading whether to show the ajax loading gif or not.
      * @return {void}
      */
     propagateNewPage: function (str, showAjaxLoading) {
@@ -318,19 +328,35 @@ var broadcast = {
      * Update the part after the second hash
      */
     propagateNewPopoverParameter: function (handlerName, value) {
-        var hash = broadcast.getHashFromUrl(window.location.href);
-        var hashParts = hash.split('&popover=');
+        // init broadcast if not already done (it is required to make popovers work in widgetize mode)
+        broadcast.init(true);
 
-        var newHash = hashParts[0];
+        var hash = broadcast.getHashFromUrl(window.location.href);
+
+        var popover = '';
         if (handlerName) {
-            var popover = handlerName + ':' + value;
+            popover = handlerName + ':' + value;
 
             // between jquery.history and different browser bugs, it's impossible to ensure
             // that the parameter is en- and decoded the same number of times. in order to
             // make sure it doesn't change, we have to manipulate the url encoding a bit.
             popover = encodeURIComponent(popover);
             popover = popover.replace(/%/g, '\$');
-            newHash = hashParts[0] + '&popover=' + popover;
+        }
+
+        if ('' == value || 'undefined' == typeof value) {
+            var newHash = hash.replace(/(&?popover=.*)/, '');
+        } else if (broadcast.getParamValue('popover', hash)) {
+            var newHash = broadcast.updateParamValue('popover='+popover, hash);
+        } else if (hash && hash != '#') {
+            var newHash = hash + '&popover=' + popover
+        } else {
+            var newHash = '#popover='+popover;
+        }
+
+        // never use an empty hash, as that might reload the page
+        if ('' == newHash) {
+            newHash = '#';
         }
 
         window.location.href = 'index.php' + window.location.search + newHash;
@@ -340,7 +366,7 @@ var broadcast = {
      * Add a handler for the popover parameter
      */
     addPopoverHandler: function (handlerName, callback) {
-        this.popoverHandlers[handlerName] = callback;
+        broadcast.popoverHandlers[handlerName] = callback;
     },
 
     /**
@@ -386,7 +412,7 @@ var broadcast = {
             async: true,
             error: broadcast.customAjaxHandleError,	// Callback when the request fails
             success: sectionLoaded, // Callback when the request succeeds
-            data: new Object
+            data: {}
         };
         globalAjaxQueue.push($.ajax(ajaxRequest));
         return false;
@@ -470,8 +496,11 @@ var broadcast = {
 
         var result = {};
         for (var i = 0; i != pairs.length; ++i) {
-            var pair = pairs[i].split(/=(.+)?/); // split only on first '='
-            result[pair[0]] = pair[1];
+            // attn: split with regex has bugs in several browsers such as IE 8
+            // so we need to split, use the first part as key and rejoin the rest
+            var pair = pairs[i].split('=');
+            var key  = pair.shift();
+            result[key] = pair.join('=');
         }
         return result;
     },

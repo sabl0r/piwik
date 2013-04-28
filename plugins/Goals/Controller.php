@@ -402,8 +402,7 @@ class Piwik_Goals_Controller extends Piwik_Controller
 
         if ($conversions > 0) {
             // for non-Goals reports, we show the goals table
-            $customParams = $ecommerceCustomParams
-                + array('viewDataTable' => 'tableGoals', 'documentationForGoalsPage' => '1');
+            $customParams = $ecommerceCustomParams + array('documentationForGoalsPage' => '1');
 
             if (Piwik_Common::getRequestVar('idGoal', '') === '') // if no idGoal, use 0 for overview
             {
@@ -414,6 +413,11 @@ class Piwik_Goals_Controller extends Piwik_Controller
             foreach ($allReports as $category => $reports) {
                 $categoryText = Piwik_Translate('Goals_ViewGoalsBy', $category);
                 foreach ($reports as $report) {
+                    $customParams['viewDataTable'] = 'tableGoals';
+                    if(in_array($report['action'], array('getVisitsUntilConversion', 'getDaysToConversion'))) {
+                        $customParams['viewDataTable'] = 'table';
+                    }
+
                     if (Piwik_DataTableList::getInstance()->isDefined($report['module'].'-'.$report['action'])) {
                         $goalReportsByDimension->addDataTableReport($categoryText, $report['name'], $report['module'].'-'.$report['action'], $customParams);
                     } else {

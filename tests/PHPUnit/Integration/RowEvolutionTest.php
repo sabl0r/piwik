@@ -75,6 +75,7 @@ class Test_Piwik_Integration_RowEvolution extends IntegrationTestCase
             . ',Google>' . urlencode(strtolower($keywords[2]));
         // Test multiple labels search engines, Google should also have a 'logo' entry
         $config['otherRequestParameters']['label'] = urlencode($keywordsStr . ",Google");
+        $config['otherRequestParameters']['filter_limit'] = 1; // should have no effect
         $return[] = array('API.getRowEvolution', $config);
 
         // Actions > Pages titles, standard label
@@ -83,12 +84,21 @@ class Test_Piwik_Integration_RowEvolution extends IntegrationTestCase
         $config['otherRequestParameters']['apiModule'] = 'Actions';
         $config['otherRequestParameters']['apiAction'] = 'getPageTitles';
         $config['otherRequestParameters']['label'] = urlencode('incredible title 0');
+        $config['otherRequestParameters']['filter_limit'] = 1; // should have no effect
         $return[] = array('API.getRowEvolution', $config);
 
         // Actions > Page titles, multiple labels
         $config['testSuffix'] = '_pageTitlesMulti';
         $label = urlencode('incredible title 0') . ',' . urlencode('incredible title 2');
         $config['otherRequestParameters']['label'] = urlencode($label);
+        $return[] = array('API.getRowEvolution', $config);
+        
+        // standard label, entry page titles
+        $config['testSuffix'] = '_entryPageTitles';
+        $config['periods'] = 'day';
+        $config['otherRequestParameters']['apiModule'] = 'Actions';
+        $config['otherRequestParameters']['apiAction'] = 'getEntryPageTitles';
+        $config['otherRequestParameters']['label'] = urlencode('incredible title 0');
         $return[] = array('API.getRowEvolution', $config);
 
         // Actions > Page URLS, hierarchical label
@@ -152,7 +162,49 @@ class Test_Piwik_Integration_RowEvolution extends IntegrationTestCase
                 'apiAction' => 'getBrowser',
                 'label'     => 'Firefox,Chrome,Opera'
             )
-
+        ));
+        
+        // test multi row evolution w/ filter_limit to limit all available labels
+        $return[] = array('API.getRowEvolution', array(
+            'testSuffix'             => '_multiWithFilterLimit',
+            'periods'                => 'day',
+            'idSite'                 => $idSite,
+            'date'                   => $today,
+            'otherRequestParameters' => array(
+                'date'         => '2010-03-01,2010-03-06',
+                'period'       => 'day',
+                'apiModule'    => 'Referers',
+                'apiAction'    => 'getWebsites',
+                'filter_limit' => 3, // only 3 labels should show up
+            )
+        ));
+        
+        // test multi row evolution when there is no data
+        $return[] = array('API.getRowEvolution', array(
+            'testSuffix'             => '_multiWithNoData',
+            'periods'                => 'day',
+            'idSite'                 => $idSite,
+            'date'                   => $today,
+            'otherRequestParameters' => array(
+                'date'      => '2010-04-01,2010-04-06',
+                'period'    => 'day',
+                'apiModule' => 'Referers',
+                'apiAction' => 'getWebsites',
+                // no label
+            )
+        ));
+        
+        // (non-rowevolution test) test flattener w/ search engines to make sure
+        // queued filters are not applied twice
+        $return[] = array('Referers.getSearchEngines', array(
+            'testSuffix'             => '_flatFilters',
+            'periods'                => 'month',
+            'idSite'                 => $idSite,
+            'date'                   => '2010-02-01',
+            'otherRequestParameters' => array(
+                'flat'               => 1,
+                'expanded'           => '0'
+            )
         ));
 
         return $return;

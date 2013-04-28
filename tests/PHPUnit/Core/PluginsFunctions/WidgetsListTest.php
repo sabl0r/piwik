@@ -26,9 +26,7 @@ class WidgetsListTest extends DatabaseTestCase
         $_GET['period'] = 'month';
         $_GET['date']   = date('d-m-Y');
 
-        $pluginsManager = Piwik_PluginsManager::getInstance();
-        $pluginsToLoad = Piwik_Config::getInstance()->Plugins['Plugins'];
-        $pluginsManager->loadPlugins($pluginsToLoad);
+        IntegrationTestCase::loadAllPlugins();
 
         Piwik_WidgetsList::_reset();
         $widgets = Piwik_GetWidgetsList();
@@ -54,6 +52,7 @@ class WidgetsListTest extends DatabaseTestCase
         foreach ($numberOfWidgets AS $category => $widgetCount) {
             $this->assertEquals($widgetCount, count($widgets[$category]), sprintf("Widget: %s", $category));
         }
+        IntegrationTestCase::unloadAllPlugins();
     }
 
     /**
@@ -137,5 +136,6 @@ class WidgetsListTest extends DatabaseTestCase
             $this->assertEquals($widgetCount, count($widgets[$category]));
         }
     }
+
 
 }

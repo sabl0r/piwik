@@ -21,7 +21,7 @@ class Piwik_VisitsSummary_Controller extends Piwik_Controller
         $this->setSparklinesAndNumbers($view);
         echo $view->render();
     }
-    
+
     public function getSparklines()
     {
         $view = Piwik_View::factory('sparklines');
@@ -49,7 +49,7 @@ class Piwik_VisitsSummary_Controller extends Piwik_Controller
         $request = new Piwik_API_Request($requestString);
         return $request->process();
     }
-    
+
     protected function setSparklinesAndNumbers($view)
     {
         $this->setPeriodVariablesView($view);
@@ -61,6 +61,7 @@ class Piwik_VisitsSummary_Controller extends Piwik_Controller
         $view->urlSparklineMaxActions       = $this->getUrlSparklineForDataTable( 'widgetVisitsSummarygetEvolutionGraph', array('columns' => array('max_actions')));
         $view->urlSparklineActionsPerVisit  = $this->getUrlSparklineForDataTable( 'widgetVisitsSummarygetEvolutionGraph', array('columns' => array('nb_actions_per_visit')));
         $view->urlSparklineBounceRate       = $this->getUrlSparklineForDataTable( 'widgetVisitsSummarygetEvolutionGraph', array('columns' => array('bounce_rate')));
+        $view->urlSparklineAvgGenerationTime = $this->getUrlSparklineForDataTable('widgetVisitsSummarygetEvolutionGraph', array('columns' => array('avg_time_generation')));
 
         $idSite = Piwik_Common::getRequestVar('idSite');
         $displaySiteSearch = Piwik_Site::isSiteSearchEnabledFor($idSite);
@@ -72,11 +73,11 @@ class Piwik_VisitsSummary_Controller extends Piwik_Controller
 
         $dataTableVisit = self::getVisitsSummary();
         $dataRow = $dataTableVisit->getRowsCount() == 0 ? new Piwik_DataTable_Row() : $dataTableVisit->getFirstRow();
-        
+
         $dataTableActions = Piwik_Actions_API::getInstance()->get($idSite, Piwik_Common::getRequestVar('period'), Piwik_Common::getRequestVar('date'), Piwik_Common::getRequestVar('segment',false));
         $dataActionsRow =
             $dataTableActions->getRowsCount() == 0 ? new Piwik_DataTable_Row() : $dataTableActions->getFirstRow();
-        
+
         $view->nbUniqVisitors = (int)$dataRow->getColumn('nb_uniq_visitors');
         $nbVisits = (int)$dataRow->getColumn('nb_visits');
         $view->nbVisits = $nbVisits;
@@ -91,6 +92,7 @@ class Piwik_VisitsSummary_Controller extends Piwik_Controller
         $view->bounceRate = Piwik::getPercentageSafe($nbBouncedVisits, $nbVisits);
         $view->maxActions = (int)$dataRow->getColumn('max_actions');
         $view->nbActionsPerVisit = $dataRow->getColumn('nb_actions_per_visit');
+		$view->averageGenerationTime = $dataActionsRow->getColumn('avg_time_generation');
 
         if($displaySiteSearch)
         {
@@ -101,9 +103,9 @@ class Piwik_VisitsSummary_Controller extends Piwik_Controller
         // backward compatibility:
         // show actions if the finer metrics are not archived
         $view->showOnlyActions = false;
-        if (  $dataActionsRow->getColumn('nb_pageviews') 
+        if (  $dataActionsRow->getColumn('nb_pageviews')
             + $dataActionsRow->getColumn('nb_downloads')
-            + $dataActionsRow->getColumn('nb_outlinks') == 0 
+            + $dataActionsRow->getColumn('nb_outlinks') == 0
             && $dataRow->getColumn('nb_actions') > 0)
         {
             $view->showOnlyActions = true;

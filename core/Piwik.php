@@ -359,7 +359,7 @@ class Piwik
      * @param int $nFlags    glob() flags
      * @return array
      */
-    public static function globr($sDir, $sPattern, $nFlags = NULL)
+    public static function globr($sDir, $sPattern, $nFlags = null)
     {
         if (($aFiles = _glob("$sDir/$sPattern", $nFlags)) == false) {
             $aFiles = array();
@@ -1314,10 +1314,12 @@ class Piwik
      * @param string $timeAsSentence
      * @return string
      */
-    static public function getPrettyValue($idSite, $columnName, $value, $htmlAllowed, $timeAsSentence)
+    static public function getPrettyValue($idSite, $columnName, $value, $htmlAllowed)
     {
         // Display time in human readable
         if (strpos($columnName, 'time') !== false) {
+            // Little hack: Display 15s rather than 00:00:15, only for "(avg|min|max)_generation_time"
+            $timeAsSentence = (substr($columnName, -16) == '_time_generation');
             return Piwik::getPrettyTimeFromSeconds($value, $timeAsSentence);
         }
         // Add revenue symbol to revenues
@@ -1417,9 +1419,9 @@ class Piwik
             $minutes = floor(($reminder = ($numberOfSeconds - $hours * 3600)) / 60);
             $seconds = floor($reminder - $minutes * 60);
             $time = sprintf("%02s", $hours) . ':' . sprintf("%02s", $minutes) . ':' . sprintf("%02s", $seconds);
-            $milliSeconds = ($numberOfSeconds * 1000) % 1000;
-            if ($milliSeconds) {
-                $time .= '.' . sprintf("%03s", $milliSeconds);
+            $centiSeconds = ($numberOfSeconds * 100) % 100;
+            if ($centiSeconds) {
+                $time .= '.' . sprintf("%02s", $centiSeconds);
             }
             return $time;
         }
@@ -1435,8 +1437,8 @@ class Piwik
         $minutes = floor($minusDaysAndHours / 60);
 
         $seconds = $minusDaysAndHours - $minutes * 60;
-		
-		$milliSeconds = ($numberOfSeconds * 1000) % 1000;
+        $precision = ($seconds > 0 && $seconds < 0.01 ? 3 : 2);
+        $seconds = round($seconds, $precision);
 
         if ($years > 0) {
             $return = sprintf(Piwik_Translate('General_YearsDays'), $years, $days);
@@ -1446,8 +1448,6 @@ class Piwik
             $return = sprintf(Piwik_Translate('General_HoursMinutes'), $hours, $minutes);
         } elseif ($minutes > 0) {
             $return = sprintf(Piwik_Translate('General_MinutesSeconds'), $minutes, $seconds);
-		} elseif ($milliSeconds > 0 && $seconds < 1) {
-			$return = sprintf(Piwik_Translate('General_Milliseconds'), $milliSeconds);
         } else {
             $return = sprintf(Piwik_Translate('General_Seconds'), $seconds);
         }
@@ -1540,9 +1540,19 @@ class Piwik
         if (is_null($cachedResult)) {
             $segments = Piwik_Config::getInstance()->Segments;
             $cachedResult = isset($segments['Segments']) ? $segments['Segments'] : '';
+
+            Piwik_PostEvent('Piwik.getKnownSegmentsToArchiveAllSites', $cachedResult);
+
         }
 
         return $cachedResult;
+    }
+
+    static public function getKnownSegmentsToArchiveForSite($idSite)
+    {
+        $segments = array();
+        Piwik_PostEvent('Piwik.getKnownSegmentsToArchiveForSite', $segments, $idSite);
+        return $segments;
     }
 
     /*
@@ -1570,8 +1580,7 @@ class Piwik
      */
     static public function getSuperUserLogin()
     {
-        $superuser = Piwik_Config::getInstance()->superuser;
-        return $superuser['login'];
+        return Zend_Registry::get('access')->getSuperUserLogin();
     }
 
     /**

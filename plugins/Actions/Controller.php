@@ -21,14 +21,14 @@ class Piwik_Actions_Controller extends Piwik_Controller
      * @param bool $fetch
      * @return string
      */
-    
+
     public function indexPageUrls($fetch = false)
     {
         return Piwik_View::singleReport(
                 Piwik_Translate('Actions_SubmenuPages'),
                 $this->_fetchDataTable('Actions-getPageUrls'), $fetch);
     }
-    
+
     /**
      * ENTRY PAGES
      * @param bool $fetch
@@ -40,7 +40,7 @@ class Piwik_Actions_Controller extends Piwik_Controller
                 Piwik_Translate('Actions_SubmenuPagesEntry'),
                 $this->_fetchDataTable('Actions-getEntryPageUrls'), $fetch);
     }
-    
+
     /**
      * EXIT PAGES
      */
@@ -50,7 +50,7 @@ class Piwik_Actions_Controller extends Piwik_Controller
                 Piwik_Translate('Actions_SubmenuPagesExit'),
                 $this->_fetchDataTable('Actions-getExitPageUrls'), $fetch);
     }
-    
+
     /**
      * SITE SEARCH
      */
@@ -60,7 +60,7 @@ class Piwik_Actions_Controller extends Piwik_Controller
         $view->categories = Piwik_PluginsManager::getInstance()->isPluginActivated('CustomVariables');
         echo $view->render();
     }
-    
+
     /**
      * PAGE TITLES
      */
@@ -70,8 +70,8 @@ class Piwik_Actions_Controller extends Piwik_Controller
                 Piwik_Translate('Actions_SubmenuPageTitles'),
                 $this->_fetchDataTable('Actions-getPageTitles'), $fetch);
     }
-    
-    
+
+
     /**
      * DOWNLOADS
      */
@@ -81,7 +81,7 @@ class Piwik_Actions_Controller extends Piwik_Controller
                 Piwik_Translate('Actions_SubmenuDownloads'),
                 $this->_fetchDataTable('Actions-getDownloads'), $fetch);
     }
-    
+
     /**
      * OUTLINKS
      */

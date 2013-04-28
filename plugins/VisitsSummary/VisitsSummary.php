@@ -98,7 +98,8 @@ class Piwik_VisitsSummary extends Piwik_Plugin
             'nb_downloads',
             'nb_uniq_downloads',
             'nb_outlinks',
-            'nb_uniq_outlinks'
+            'nb_uniq_outlinks',
+            'avg_time_generation'
         );
     
         $idSite            = Piwik_Common::getRequestVar('idSite');

@@ -17,11 +17,6 @@
  * The labels passed to this class should be urlencoded.
  * Some reports use recursive labels (e.g. action reports). Use > to join them.
  *
- * This filter does not work when expanded=1 is set because it is designed to load
- * only the subtables on the path, not all existing subtables (which would happen with
- * expanded=1). Also, the aim of this filter is to return only the row matching the
- * label. With expanded=1, the subtables of the matching row would be returned as well.
- *
  * @package Piwik
  * @subpackage Piwik_API
  */
@@ -30,7 +25,7 @@ class Piwik_API_DataTableManipulator_LabelFilter extends Piwik_API_DataTableMani
     const SEPARATOR_RECURSIVE_LABEL = '>';
 
     private $labels;
-    private $addEmptyRows;
+    private $addLabelIndex;
 
     /**
      * Filter a data table by label.
@@ -42,18 +37,18 @@ class Piwik_API_DataTableManipulator_LabelFilter extends Piwik_API_DataTableMani
      *
      * @param string $labels      the labels to search for
      * @param Piwik_DataTable $dataTable  the data table to be filtered
-     * @param bool $addEmptyRows Whether to add empty rows when a row isn't found
-     *                                      for a label, or not.
+     * @param bool $addLabelIndex Whether to add label_index metadata describing which
+     *                            label a row corresponds to.
      * @return Piwik_DataTable
      */
-    public function filter($labels, $dataTable, $addEmptyRows = false)
+    public function filter($labels, $dataTable, $addLabelIndex = false)
     {
         if (!is_array($labels)) {
             $labels = array($labels);
         }
 
         $this->labels = $labels;
-        $this->addEmptyRows = (bool)$addEmptyRows;
+        $this->addLabelIndex = (bool)$addLabelIndex;
         return $this->manipulate($dataTable);
     }
 
@@ -69,6 +64,7 @@ class Piwik_API_DataTableManipulator_LabelFilter extends Piwik_API_DataTableMani
         // search for the first part of the tree search
         $labelPart = array_shift($labelParts);
 
+        $row = false;
         foreach ($this->getLabelVariations($labelPart) as $labelPart) {
             $row = $dataTable->getRowFromLabel($labelPart);
             if ($row !== false) {
@@ -116,6 +112,8 @@ class Piwik_API_DataTableManipulator_LabelFilter extends Piwik_API_DataTableMani
      */
     private function getLabelVariations($label)
     {
+        static $pageTitleReports = array('getPageTitles', 'getEntryPageTitles', 'getExitPageTitles');
+        
         $variations = array();
         $label = trim($label);
 
@@ -123,7 +121,7 @@ class Piwik_API_DataTableManipulator_LabelFilter extends Piwik_API_DataTableMani
         $variations[] = $sanitizedLabel;
 
         if ($this->apiModule == 'Actions'
-            && $this->apiMethod == 'getPageTitles'
+            && in_array($this->apiMethod, $pageTitleReports)
         ) {
             // special case: the Actions.getPageTitles report prefixes some labels with a blank.
             // the blank might be passed by the user but is removed in Piwik_API_Request::getRequestArrayFromString.
@@ -141,7 +139,7 @@ class Piwik_API_DataTableManipulator_LabelFilter extends Piwik_API_DataTableMani
     protected function manipulateDataTable($dataTable)
     {
         $result = $dataTable->getEmptyClone();
-        foreach ($this->labels as $labelIdx => $label) {
+        foreach ($this->labels as $labelIndex => $label) {
             $row = null;
             foreach ($this->getLabelVariations($label) as $labelVariation) {
                 $labelVariation = explode(self::SEPARATOR_RECURSIVE_LABEL, $labelVariation);
@@ -149,18 +147,13 @@ class Piwik_API_DataTableManipulator_LabelFilter extends Piwik_API_DataTableMani
 
                 $row = $this->doFilterRecursiveDescend($labelVariation, $dataTable);
                 if ($row) {
+                    if ($this->addLabelIndex) {
+                        $row->setMetadata('label_index', $labelIndex);
+                    }
+                    
                     $result->addRow($row);
                     break;
                 }
-            }
-
-            if (empty($row)
-                && $this->addEmptyRows
-            ) // if no row has been found, add an empty one
-            {
-                $row = new Piwik_DataTable_Row();
-                $row->setColumn('label', $label);
-                $result->addRow($row);
             }
         }
         return $result;
