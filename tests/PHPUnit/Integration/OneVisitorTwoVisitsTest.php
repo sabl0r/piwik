@@ -158,9 +158,9 @@ class Test_Piwik_Integration_OneVisitorTwoVisits extends IntegrationTestCase
      */
     public function testArchiveSinglePreFetchBlob()
     {
+        $cache = array();
         $archive = Piwik_Archive::build(self::$fixture->idSite, 'day', self::$fixture->dateTime);
-        $archive->getBlob('Actions_actions', 'all');
-        $cache = $archive->getBlobCache();
+        $archive->getBlob('Actions_actions', 'all', $cache);
 
         $foundSubtable = false;
 

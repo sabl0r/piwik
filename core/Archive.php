@@ -187,40 +187,69 @@ class Piwik_Archive
     const LABEL_ECOMMERCE_ORDER = 'ecommerceOrder';
     
     /**
-     * TODO
+     * The list of site IDs to query archive data for.
+     * 
+     * @var array
      */
     private $siteIds;
     
     /**
-     * TODO
+     * The list of Piwik_Period's to query archive data for.
+     * 
+     * @var array
      */
     public $periods;
     
     /**
-     * Segment applied to the visits set
+     * Segment applied to the visits set.
+     * 
      * @var Piwik_Segment
      */
     private $segment;
     
     /**
-     * TODO
+     * List of archive IDs for the sites, periods and segment we are querying with.
+     * Archive IDs are indexed by done flag and period, ie:
+     * 
+     * array(
+     *     'done.Referers' => array(
+     *         '2010-01-01' => 1,
+     *         '2010-01-02' => 2,
+     *     ),
+     *     'done.VisitsSummary' => array(
+     *         '2010-01-01' => 3,
+     *         '2010-01-02' => 4,
+     *     ),
+     * )
+     * 
+     * or,
+     * 
+     * array(
+     *     'done.all' => array(
+     *         '2010-01-01' => 1,
+     *         '2010-01-02' => 2
+     *     )
+     * )
+     * 
+     * @var array
      */
-    private $idarchives = null;
+    private $idarchives = array();
     
     /**
-     * TODO
+     * If set to true, the result of all get functions (ie, getNumeric, getBlob, etc.)
+     * will be indexed by the site ID, even if we're only querying data for one site.
+     * 
+     * @var bool
      */
     private $forceIndexedBySite;
     
     /**
-     * TODO
+     * If set to true, the result of all get functions (ie, getNumeric, getBlob, etc.)
+     * will be indexed by the period, even if we're only querying data for one period.
+     * 
+     * @var bool
      */
     private $forceIndexedByDate;
-    
-    /**
-     * TODO
-     */
-    private $blobCache = array();
     
     /**
      * TODO
@@ -249,8 +278,7 @@ class Piwik_Archive
         $this->periods = null;
         $this->siteIds = null;
         $this->segment = null;
-        $this->idarchives = null;
-        $this->blobCache = null;
+        $this->idarchives = array();
     }
 
     /**
@@ -368,9 +396,9 @@ class Piwik_Archive
      * @return mixed  False if no value with the given name
      * TODO: modify
      */
-    public function getBlob( $names, $idSubTable = null )
+    public function getBlob( $names, $idSubTable = null, &$blobCache = null ) // TODO: parameters should start/end w/ spaces
     {
-        $rows = $this->get($names, 'archive_blob', $idSubTable);
+        $rows = $this->get($names, 'archive_blob', $idSubTable, $blobCache);
         return $this->createSimpleGetResult($rows, $names, $createDataTable = false);
     }
     
@@ -436,7 +464,8 @@ class Piwik_Archive
     public function getDataTableExpanded( $name, $idSubTable = null, $addMetadataSubtableId = true )
     {
         // cache all blobs of this type using one SQL request
-        $this->get($name, 'archive_blob', 'all');
+        $blobCache = array();
+        $this->get($name, 'archive_blob', 'all', $blobCache);
         
         $recordName = $name;
         if ($idSubTable !== null) {
@@ -445,7 +474,7 @@ class Piwik_Archive
         
         // get top-level data
         $rows = array();
-        foreach ($this->blobCache as $idSite => $dates) {
+        foreach ($blobCache as $idSite => $dates) {
             foreach ($dates as $dateRange => $blobs) {
                 $table = new Piwik_DataTable();
                 if (!empty($blobs[$recordName])) {
@@ -461,13 +490,13 @@ class Piwik_Archive
             foreach ($dates as $dateRange => $table) {
                 $tableMonth = $this->getTableMonthFromDateRange($dateRange);
                 // TODO: don't need index by site/range now. remove it.
-                $this->fetchSubTables($table, $name, $idsite, $dateRange, $addMetadataSubtableId);
+                $this->fetchSubTables($table, $name, $idsite, $dateRange, $blobCache, $addMetadataSubtableId);
                 $table->enableRecursiveFilters();
             }
         }
         
-        unset($this->blobCache);
-        $this->blobCache = array();
+        // no longer need blobCache
+        unset($blobCache);
         
         return $this->createSimpleGetResult($rows, $name, $createDataTable = true, $isSimpleTable = false);
     }
@@ -478,7 +507,7 @@ class Piwik_Archive
      *       now, can only do one name at a time.
      * does breadth first search
      */
-    private function fetchSubTables( $table, $name, $idSite, $dateRange, $addMetadataSubtableId = true )
+    private function fetchSubTables( $table, $name, $idSite, $dateRange, $blobCache, $addMetadataSubtableId = true )
     {
         foreach ($table->getRows() as $row) {
             $sid = $row->getIdSubDataTable();
@@ -487,12 +516,12 @@ class Piwik_Archive
             }
             
             $blobName = $name."_".$sid;
-            if (isset($this->blobCache[$idSite][$dateRange][$blobName])) {
-                $blob = $this->blobCache[$idSite][$dateRange][$blobName];
+            if (isset($blobCache[$idSite][$dateRange][$blobName])) {
+                $blob = $blobCache[$idSite][$dateRange][$blobName];
             
                 $subtable = new Piwik_DataTable();
                 $subtable->addRowsFromSerializedArray($blob);
-                $this->fetchSubTables($subtable, $name, $idSite, $dateRange, $addMetadataSubtableId);
+                $this->fetchSubTables($subtable, $name, $idSite, $dateRange, $blobCache, $addMetadataSubtableId);
                 
                 // we edit the subtable ID so that it matches the newly table created in memory
                 // NB: we dont overwrite the datatableid in the case we are displaying the table expanded.
@@ -510,17 +539,17 @@ class Piwik_Archive
     /**
      * TODO
      */
-    private function checkBlobCache( &$result, $archiveNames )
+    private function checkBlobCache( &$result, $archiveNames, $blobCache )
     {
         foreach ($this->siteIds as $idSite) {
             foreach ($this->periods as $subperiod) {
                 $dateStr = $subperiod->getRangeString();
                 foreach ($archiveNames as $name) {
-                    if (!isset($this->blobCache[$idSite][$dateStr][$name])) {
+                    if (!isset($blobCache[$idSite][$dateStr][$name])) {
                         return false;
                     }
                     
-                    $result[$idSite][$dateStr][$name] = $this->blobCache[$idSite][$dateStr][$name];
+                    $result[$idSite][$dateStr][$name] = $blobCache[$idSite][$dateStr][$name];
                 }
             }
         }
@@ -531,7 +560,7 @@ class Piwik_Archive
      * TODO
      * $idSubTable can be 'all' to get all tables like X
      */
-    private function get( $archiveNames, $archiveTableType, $idSubTable = null )
+    private function get( $archiveNames, $archiveTableType, $idSubTable = null, &$blobCache = null )
     {
         $result = array();
         
@@ -540,15 +569,19 @@ class Piwik_Archive
         }
         
         // apply idSubTable
-        if (!is_null($idSubTable) && $idSubTable != 'all') {
+        if (!is_null($idSubTable)
+            && $idSubTable != 'all'
+        ) {
             foreach ($archiveNames as &$name) {
                 $name .= "_$idSubTable";
             }
         }
         
         // check for cached blobs
-        if ($archiveTableType == 'archive_blob') {
-            $foundAll = $this->checkBlobCache($result, $archiveNames);
+        if ($archiveTableType == 'archive_blob'
+            && $blobCache !== null
+        ) {
+            $foundAll = $this->checkBlobCache($result, $archiveNames, $blobCache);
             if ($foundAll) {
                 return $result;
             }
@@ -608,7 +641,9 @@ class Piwik_Archive
                     $value = $this->uncompress($row['value']);
                     
                     $result[$idSite][$periodStr][$row['name']] = $value;
-                    $this->blobCache[$idSite][$periodStr][$row['name']] = $value;
+                    if ($blobCache !== null) {
+                        $blobCache[$idSite][$periodStr][$row['name']] = $value;
+                    }
                 }
             }
         }
@@ -623,51 +658,41 @@ class Piwik_Archive
     {
         $requestedReports = $this->getRequestedReports($archiveNames);
         
-        if (!is_null($this->idarchives)) {
-            // figure out which reports haven't been processed
-            $cacheKeys = array();
-            $reportsToArchive = array();
-            foreach ($requestedReports as $report) {
-                $cacheKey = $this->getArchiveCacheKey($report); // TODO: change name of getArchiveCacheKey
-                
-                $cacheKeys[$cacheKey] = true;
-                if (!isset($this->idarchives[$cacheKey])) {
-                    $reportsToArchive[] = $report;
-                }
-            }
+        // figure out which plugins haven't been processed
+        $plugins = array();
+        $reportsToArchive = array();
+        foreach ($requestedReports as $report) {
+            $plugin = Piwik_ArchiveProcessing::getPluginBeingProcessed($report); // TODO: should use 'all' when not using a segment
             
-            if (!empty($reportsToArchive)) {
-                if (!$this->isArchivingDisabled()) {
-                    $this->getArchiveIdsAfterLaunching($reportsToArchive);
-                } else {
-                    $this->getArchiveIdsWithoutLaunching($reportsToArchive);
-                }
+            $plugins[$plugin] = true;
+            if (!isset($this->idarchives[$plugin])) {
+                $reportsToArchive[] = $report;
             }
-            
-            $idArchivesByMonth = array();
-            foreach ($this->idarchives as $key => $dates) {
-                // if this set of idarchives isn't related to the desired archive fields, don't use them
-                if (!isset($cacheKeys[$key])) {
-                    continue;
-                }
-                
-                foreach ($dates as $dateRange => $pair) {
-                    list($isThereSomeVisits, $idarchive) = $pair;
-                    if (!$isThereSomeVisits) continue;
-                    
-                    $tableMonth = $this->getTableMonthFromDateRange($dateRange);
-                    $idArchivesByMonth[$tableMonth][] = $idarchive;
-                }
-            }
-            
-            return $idArchivesByMonth;
         }
         
-        if (!$this->isArchivingDisabled()) {
-            return $this->getArchiveIdsAfterLaunching($requestedReports);
-        } else {
-            return $this->getArchiveIdsWithoutLaunching($requestedReports);
+        // cache id archives for plugins we haven't processed yet
+        if (!empty($reportsToArchive)) {
+            if (!$this->isArchivingDisabled()) {
+                $this->getArchiveIdsAfterLaunching($reportsToArchive);
+            } else {
+                $this->getArchiveIdsWithoutLaunching($reportsToArchive);
+            }
         }
+        
+        // order idarchives by the table month they belong to
+        $idArchivesByMonth = array();
+        foreach (array_keys($plugins) as $plugin) {
+            if (empty($this->idarchives[$plugin])) {
+                continue;
+            }
+            
+            foreach ($this->idarchives[$plugin] as $dateRange => $idarchive) {
+                $tableMonth = $this->getTableMonthFromDateRange($dateRange);
+                $idArchivesByMonth[$tableMonth][] = $idarchive;
+            }
+        }
+        
+        return $idArchivesByMonth;
     }
     
     /**
@@ -722,12 +747,15 @@ class Piwik_Archive
                             $idArchive = $processing->getIdArchive();
                         }
                         
+                        if (!$processing->isThereSomeVisits()) {
+                            continue;
+                        }
+                        
                         // store & cache the archive ID
                         $result[$tableMonth][] = $idArchive;
                         
-                        $cacheKey = $this->getArchiveCacheKey($report);
-                        $this->idarchives[$cacheKey][$periodStr] =
-                            array($processing->isThereSomeVisits(), $idArchive);
+                        $plugin = Piwik_ArchiveProcessing::getPluginBeingProcessed($report);
+                        $this->idarchives[$plugin][$periodStr] = $idArchive;
                     }
                 }
             }
@@ -755,7 +783,7 @@ class Piwik_Archive
     {
         $piwikTables = Piwik::getTablesInstalled(); // TODO: will this be too slow?
         
-        $getArchiveIdsSql = "SELECT idsite, date1, date2, MAX(idarchive) as idarchive
+        $getArchiveIdsSql = "SELECT idsite, name, date1, date2, MAX(idarchive) as idarchive
                                FROM %s
                               WHERE period = ?
                                 AND %s
@@ -798,7 +826,9 @@ class Piwik_Archive
                 
                 $dateStr = $row['date1'].",".$row['date2'];
                 $idSite = (int)$row['idsite'];
-                $this->idarchives['all'][$dateStr] = array(true, $row['idarchive']); // TODO: any way to get isThereSomeVisits w/ this optimization?
+                
+                $plugin = Piwik_ArchiveProcessing::getPluginBeingProcessed($row['name']);
+                $this->idarchives[$plugin][$dateStr] = $row['idarchive']; // TODO: any way to get isThereSomeVisits w/ this optimization?
             }
             
             if (!empty($archiveIds)) {
@@ -901,17 +931,7 @@ class Piwik_Archive
         }
     }
     
-    /**
-     * TODO
-     */
-    private function getArchiveCacheKey( $nameOrReport )
-    {
-        $report = self::getRequestedReport($nameOrReport);
-        
         // TODO: isArchivingDisabled gets called a lot. need to cache?
-        return Piwik_ArchiveProcessing::getPluginBeingProcessed($report);
-    }
-    
     /**
      * TODO
      */
@@ -1124,14 +1144,6 @@ class Piwik_Archive
     private function uncompress( $data )
     {
         return @gzuncompress($data);
-    }
-    
-    /**
-     * TODO
-     */
-    public function getBlobCache()
-    {
-        return $this->blobCache;
     }
     
     /**
