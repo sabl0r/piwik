@@ -1519,7 +1519,9 @@ class Piwik_DataTable
             }
             
             if (is_array($metadata)) {
-                $result->metadata = $metadata;
+                foreach ($metadata as $key => $value) {
+                    $result->setMetadata($key, $value);
+                }
             }
         } else { // create a DataTable_Array
             $result = new Piwik_DataTable_Array();
