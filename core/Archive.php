@@ -655,9 +655,9 @@ class Piwik_Archive
         // figure out which archives haven't been processed
         $doneFlags = array();
         $reportsToArchive = array();
-        $periodType = $this->getPeriodLabel();
         foreach ($requestedReports as $report) {
-            $doneFlag = Piwik_ArchiveProcessing::getDoneStringFlagFor($this->segment, $periodType, $report);
+            $doneFlag = Piwik_ArchiveProcessing::getDoneStringFlagFor(
+                $this->segment, $this->getPeriodLabel(), $report);
             
             $doneFlags[$doneFlag] = true;
             if (!isset($this->idarchives[$doneFlag])) {
