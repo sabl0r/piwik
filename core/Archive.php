@@ -395,8 +395,8 @@ class Piwik_Archive
      */
     public function getNumeric($names)
     {
-        $rows = $this->get($names, 'archive_numeric');
-        return $this->createSimpleGetResult($rows, $names, $createDataTable = false, $isSimpleTable = false, $isNumeric = true);
+        $data = $this->get($names, 'numeric');
+        return $data->getArray($this->getResultIndices());
     }
     
     /**
@@ -411,10 +411,10 @@ class Piwik_Archive
      *                            and date and we're not forcing an index, and array if multiple
      *                            sites/dates are queried.
      */
-    public function getBlob($names, $idSubtable = null, &$blobCache = false)
+    public function getBlob($names, $idSubtable = null)
     {
-        $rows = $this->get($names, 'archive_blob', $idSubtable, $blobCache);
-        return $this->createSimpleGetResult($rows, $names, $createDataTable = false);
+        $data = $this->get($names, 'blob', $idSubtable);
+        return $data->getArray($this->getResultIndices());
     }
     
     /**
@@ -428,8 +428,8 @@ class Piwik_Archive
      */
     public function getDataTableFromNumeric($names)
     {
-        $rows = $this->get($names, 'archive_numeric');
-        return $this->createSimpleGetResult($rows, $names, $createDataTable = true, $isSimpleTable = true, $isNumeric = true);
+        $data = $this->get($names, 'numeric');
+        return $data->getDataTable($this->getResultIndices());
     }
 
     /**
@@ -442,33 +442,12 @@ class Piwik_Archive
      * 
      * @param string $name The name of the record to get.
      * @param int|string|null $idSubtable The subtable ID (if any) or 'all' if requesting every datatable.
-     * @param array|false $blobCache If not false, this will store the blob strings of any blob
-     *                               loaded. Useful when supplying 'all' for $idSubtable.
      * @return Piwik_DataTable|false
      */
-    public function getDataTable($name, $idSubtable = null, &$blobCache = false)
+    public function getDataTable($name, $idSubtable = null)
     {
-        $tsArchivedValues = array();
-        $rows = $this->get($name, 'archive_blob', $idSubtable, $blobCache, $tsArchivedValues);
-        
-        // deserialize each string blob value into a DataTable
-        foreach ($rows as $idSite => &$dates) {
-            foreach ($dates as $periodStr => &$row) {
-                $value = reset($row);
-                
-                $table = new Piwik_DataTable();
-                if (!empty($value)) {
-                    $table->addRowsFromSerializedArray($value);
-                }
-                if (!empty($tsArchived[$idSite][$periodStr])) {
-                    $table->setMetadata('ts_archived', reset($tsArchived[$idSite][$periodStr]));
-                }
-                
-                $row = $table;
-            }
-        }
-        
-        return $this->createSimpleGetResult($rows, $name, $createDataTable = true, $isSimpleTable = false);
+        $data = $this->get($name, 'blob', $idSubtable);
+        return $data->getDataTable($this->getResultIndices());
     }
     
     /**
@@ -482,9 +461,12 @@ class Piwik_Archive
      */
     public function getDataTableExpanded($name, $idSubtable = null, $addMetadataSubtableId = true)
     {
+        $data = $this->get($name, 'blob', 'all');
+        return $data->getExpandedDataTable($idSubtable, $addMetadataSubtableId);
+        /* TODO remove this when not necessary
         // cache all blobs of this type using one SQL request
         $blobCache = array();
-        $this->get($name, 'archive_blob', 'all', $blobCache);
+        $this->get($name, 'blob', 'all', $blobCache);
         
         $recordName = $name;
         if ($idSubtable !== null) {
@@ -517,13 +499,13 @@ class Piwik_Archive
         // no longer need blobCache
         unset($blobCache);
         
-        return $this->createSimpleGetResult($rows, $name, $createDataTable = true, $isSimpleTable = false);
+        return $this->createSimpleGetResult($rows, $name, $createDataTable = true, $isSimpleTable = false);*/
     }
     
     /**
      * Sets subtable IDs of every row in a Piwik_DataTable (and its subtables) using
      * blob records from a pre-loaded cache.
-     */
+     *//* TODO remove when not necessary
     private function setSubTables($table, $name, $idSite, $dateRange, $blobCache, $addMetadataSubtableId = true)
     {
         foreach ($table->getRows() as $row) {
@@ -551,15 +533,14 @@ class Piwik_Archive
                 $row->setSubtable($subtable);
             }
         }
-    }
+    }*/
     
     /**
      * Queries archive tables for data and returns the result.
      */
-    private function get($archiveNames, $archiveTableType, $idSubtable = null,
-                           &$blobCache = false, &$tsArchivedValues = false)
+    private function get($archiveNames, $archiveDataType, $idSubtable = null)
     {
-        $result = array();
+        $archiveTableType = 'archive_'.$archiveDataType;
         
         if (!is_array($archiveNames)) {
             $archiveNames = array($archiveNames);
@@ -574,16 +555,12 @@ class Piwik_Archive
             }
         }
         
+        $result = new Piwik_Archive_DataCollection($archiveNames, $archiveDataType); // TODO
+        
         // get the archive IDs
         $archiveIds = $this->getArchiveIds($archiveNames);
         if (empty($archiveIds)) {
-            return array();
-        }
-        
-        // Creating the default array, to ensure consistent order
-        $defaultValues = array();
-        foreach ($archiveNames as $name) {
-            $defaultValues[$name] = 0;
+            return $result;
         }
         
         // create the SQL to select archive data
@@ -616,25 +593,20 @@ class Piwik_Archive
                 $idSite = $row['idsite'];
                 $periodStr = $row['date1'].",".$row['date2'];
                 
-                if (!isset($result[$idSite][$periodStr])) {
-                    $result[$idSite][$periodStr] = $defaultValues;
-                }
+                $collectionKeys = array('site' => $idSite, 'period' => $periodStr);
+                
+                $resultRow = $result->get($collectionKeys);
                 
                 if ($idSubtable != 'all') {
                     $value = $archiveTableType == 'archive_numeric'
                         ? (float)$row['value'] : $this->uncompress($row['value']);
-                    $result[$idSite][$periodStr][$row['name']] = $value;
+                    
+                    $resultRow[$row['name']] = $value;
                 } else if ($archiveTableType == 'archive_blob') {
                     $value = $this->uncompress($row['value']);
+                    $resultRow[$row['name']] = $value;
                     
-                    $result[$idSite][$periodStr][$row['name']] = $value;
-                    if ($blobCache !== false) {
-                        $blobCache[$idSite][$periodStr][$row['name']] = $value;
-                    }
-                    
-                    if ($tsArchivedValues !== false) {
-                        $tsArchivedValues[$idSite][$periodStr][$row['name']] = $row['ts_archived'];
-                    }
+                    $result->addKey('ts_archived', $row['ts_archived'], $resultRow);
                 }
             }
         }
@@ -920,6 +892,28 @@ class Piwik_Archive
         } else {
             return $archiveName;
         }
+    }
+    
+    /**
+     * TODO
+     */
+    private function getResultIndices()
+    {
+        $indices = array();
+        
+        if (count($this->siteIds) > 1
+            || $this->forceIndexedBySite
+        ) {
+            $indices['site'] = 'idSite';
+        }
+        
+        if (count($this->periods) > 1
+            || $this->forceIndexedByDate
+        ) {
+            $indices['period'] = 'date';
+        }
+        
+        return $indices;
     }
     
     /**
