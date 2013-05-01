@@ -371,9 +371,14 @@ class Piwik_DataTable
      *
      * @param string $className   Class name, eg. "Sort" or "Piwik_DataTable_Filter_Sort"
      * @param array $parameters  Array of parameters to the filter, eg. array('nb_visits', 'asc')
+     * TODO modify
      */
     public function filter($className, $parameters = array())
     {
+        if (is_callable($className)) {
+            $className($this);
+        }
+        
         if (!class_exists($className, false)) {
             $className = "Piwik_DataTable_Filter_" . $className;
         }
@@ -1532,6 +1537,16 @@ class Piwik_DataTable
                 $result->addTable($table, $key);
             }
         }
+        return $result;
+    }
+    
+    /**
+     * TODO
+     */
+    public static function fromBlob($blob)
+    {
+        $result = new Piwik_DataTable();
+        $result->addRowsFromSerializedArray($blob);
         return $result;
     }
 }

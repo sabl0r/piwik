@@ -12,7 +12,6 @@
 // TODO: for getDataTableNumeric, this means one row per site/period. is this correct? Will this be the case for every get... method? Need to make this clear somewhere, piwik docs don't mention anything about this.
 // TODO: add test for ts_archived (in metadata)
 // TODO: create ticket for this: when building archives, should use each site's timezone (ONLY FOR 'now'). 
-// TODO: getDataTable/getDataTableExpanded only allows one name right now, change?
 */
 /**
  * The archive object is used to query specific data for a day or a period of statistics for a given website.
@@ -277,7 +276,13 @@ class Piwik_Archive
                                   $forceIndexedByDate = false)
     {
         $this->siteIds = $this->getAsNonEmptyArray($siteIds, 'siteIds');
-        $this->periods = $this->getAsNonEmptyArray($periods, 'periods');
+        
+        $periods = $this->getAsNonEmptyArray($periods, 'periods');
+        $this->periods = array();
+        foreach ($periods as $period) {
+            $this->periods[$period->getRangeString()] = $period;
+        }
+        
         $this->segment = $segment;
         $this->forceIndexedBySite = $forceIndexedBySite;
         $this->forceIndexedByDate = $forceIndexedByDate;
@@ -447,7 +452,9 @@ class Piwik_Archive
     public function getDataTable($name, $idSubtable = null)
     {
         $data = $this->get($name, 'blob', $idSubtable);
-        return $data->getDataTable($this->getResultIndices());
+        $dataTable = $data->getDataTable($this->getResultIndices());
+        $this->transformMetadata($dataTable);
+        return $dataTable;
     }
     
     /**
@@ -462,78 +469,10 @@ class Piwik_Archive
     public function getDataTableExpanded($name, $idSubtable = null, $addMetadataSubtableId = true)
     {
         $data = $this->get($name, 'blob', 'all');
-        return $data->getExpandedDataTable($idSubtable, $addMetadataSubtableId);
-        /* TODO remove this when not necessary
-        // cache all blobs of this type using one SQL request
-        $blobCache = array();
-        $this->get($name, 'blob', 'all', $blobCache);
-        
-        $recordName = $name;
-        if ($idSubtable !== null) {
-            $recordName .= '_' . $idSubtable;
-        }
-        
-        // get top-level data
-        $rows = array();
-        foreach ($blobCache as $idSite => $dates) {
-            foreach ($dates as $dateRange => $blobs) {
-                $table = new Piwik_DataTable();
-                if (!empty($blobs[$recordName])) {
-                    $table->addRowsFromSerializedArray($blobs[$recordName]);
-                }
-                
-                $rows[$idSite][$dateRange] = $table;
-            }
-        }
-        
-        // fetch subtables
-        foreach ($rows as $idsite => $dates) {
-            foreach ($dates as $dateRange => $table) {
-                $tableMonth = $this->getTableMonthFromDateRange($dateRange);
-                
-                $this->setSubTables($table, $name, $idsite, $dateRange, $blobCache, $addMetadataSubtableId);
-                $table->enableRecursiveFilters();
-            }
-        }
-        
-        // no longer need blobCache
-        unset($blobCache);
-        
-        return $this->createSimpleGetResult($rows, $name, $createDataTable = true, $isSimpleTable = false);*/
+        $dataTable = $data->getExpandedDataTable($idSubtable, $addMetadataSubtableId);
+        $this->transformMetadata($dataTable);
+        return $dataTable;
     }
-    
-    /**
-     * Sets subtable IDs of every row in a Piwik_DataTable (and its subtables) using
-     * blob records from a pre-loaded cache.
-     *//* TODO remove when not necessary
-    private function setSubTables($table, $name, $idSite, $dateRange, $blobCache, $addMetadataSubtableId = true)
-    {
-        foreach ($table->getRows() as $row) {
-            $sid = $row->getIdSubDataTable();
-            if ($sid === null) {
-                continue;
-            }
-            
-            $blobName = $name."_".$sid;
-            if (isset($blobCache[$idSite][$dateRange][$blobName])) {
-                $blob = $blobCache[$idSite][$dateRange][$blobName];
-            
-                $subtable = new Piwik_DataTable();
-                $subtable->addRowsFromSerializedArray($blob);
-                $this->setSubTables($subtable, $name, $idSite, $dateRange, $blobCache, $addMetadataSubtableId);
-                
-                // we edit the subtable ID so that it matches the newly table created in memory
-                // NB: we dont overwrite the datatableid in the case we are displaying the table expanded.
-                if ($addMetadataSubtableId) {
-                    // this will be written back to the column 'idsubdatatable' just before rendering,
-                    // see Renderer/Php.php
-                    $row->addMetadata('idsubdatatable_in_db', $row->getIdSubDataTable());
-                }
-                
-                $row->setSubtable($subtable);
-            }
-        }
-    }*/
     
     /**
      * Queries archive tables for data and returns the result.
@@ -555,7 +494,8 @@ class Piwik_Archive
             }
         }
         
-        $result = new Piwik_Archive_DataCollection($archiveNames, $archiveDataType); // TODO
+        $keySets = $this->getDataCollectionKeySets();
+        $result = new Piwik_Archive_DataCollection($archiveNames, $archiveDataType, $defaultRow = null, $keySets);
         
         // get the archive IDs
         $archiveIds = $this->getArchiveIds($archiveNames);
@@ -594,7 +534,6 @@ class Piwik_Archive
                 $periodStr = $row['date1'].",".$row['date2'];
                 
                 $collectionKeys = array('site' => $idSite, 'period' => $periodStr);
-                
                 $resultRow = $result->get($collectionKeys);
                 
                 if ($idSubtable != 'all') {
@@ -919,114 +858,24 @@ class Piwik_Archive
     /**
      * TODO
      */
-    private function createSimpleGetResult($rows, $names, $createDataTable, $isSimpleTable = true, $isNumeric = false)
+    private function getDataCollectionKeySets()
     {
-        if (!is_array($names)) {
-            $names = array($names);
-        }
-        
-        // add empty arrays for sites & dates that have no data
-        foreach ($this->siteIds as $idSite) {
-            if (!isset($rows[$idSite])) {
-                $rows[$idSite] = array();
-            }
-            
-            $byDate = &$rows[$idSite];
-            foreach ($this->periods as $subperiod) {
-                $dateStr = $subperiod->getRangeString();
-                $prettyDate = $subperiod->getPrettyString();
-                
-                if (!isset($byDate[$dateStr])) {
-                    $byDate[$prettyDate] = array();
-                } else {
-                    // replace date range string w/ pretty date string
-                    $byDate[$prettyDate] = $byDate[$dateStr];
-                    unset($byDate[$dateStr]);
-                }
-            }
-        }
-        
-        // set result metadata
-        $metadata = array();
-        foreach ($this->siteIds as $idSite) {
-            $oSite = new Piwik_Site($idSite);
-            foreach ($this->periods as $period) {
-                $prettyDate = $period->getPrettyString();
-                $metadata[$idSite][$prettyDate] = array(
-                    'timestamp' => $period->getDateStart()->getTimestamp(),
-                    'site' => $oSite,
-                    'period' => $period,
-                );
-            }
-        }
-        
-        // simplify result
-        if (count($this->siteIds) == 1
-            && !$this->forceIndexedBySite
-        ) {
-            if (count($this->periods) == 1    // 1 site, 1 date
-                && !$this->forceIndexedByDate
-            ) {
-                // return one row/value
-                if (empty($rows)) {
-                    return false;
-                } else {
-                    $firstValue = reset($rows);
-                    
-                    if (empty($firstValue)) {
-                        return false;
-                    } else {
-                        $rows = reset($firstValue);
-                        
-                        // special case for one site, one date, one metric request (backwards compatibility)
-                        if ($isNumeric
-                            && empty($rows)
-                        ) {
-                            foreach ($names as $name) {
-                                $rows[$name] = 0;
-                            }
-                        }
-                        
-                        $firstMetadata = reset($metadata);
-                        $metadata = reset($firstMetadata);
-                        $indices = array();
-                    }
-                }
-            } else { // 1 site, multiple dates
-                // remove top-level site index
-                $rows = reset($rows);
-                $metadata = reset($metadata);
-                $indices = array('date');
-            }
-        } else {
-            if (count($this->periods) == 1 && !$this->forceIndexedByDate) { // multiple sites, 1 date
-                // remove inner date arrays
-                foreach ($rows as $idSite => &$value) {
-                    $value = reset($value);
-                }
-                foreach ($metadata as $key => &$value) {
-                    $value = reset($value);
-                }
-                $indices = array('idSite');
-            } else { // multiple sites, multiple dates
-                $indices = array('idSite', 'date');
-            }
-        }
-        
-        // create datatable if desired
-        if ($createDataTable) {
-            if ($rows instanceof Piwik_DataTable) {
-                $rows->metadata = $metadata;
-                return $rows;
-            }
-            
-            return Piwik_DataTable::createIndexedFromArray($rows, $metadata, $indices, $isSimpleTable);
-        } else {
-            if (empty($indices) && count($names) == 1) {
-                return reset($rows);
-            }
-            return $rows;
-        }
+        return array(
+            'site' => $this->siteIds,
+            'period' => array_keys($this->periods)
+        );
+    }
+    
+    /**
+     * TODO
+     */
+    private function transformMetadata($table)
+    {
+        $self = $this;
+        $table->filter(function ($table) use($self) {
+            $table->metadata['site'] = new Piwik_Site($table->metadata['site']);
+            $table->metadata['period'] = $self->periods[$table->metadata['period']];
+        });
     }
     
     /**
