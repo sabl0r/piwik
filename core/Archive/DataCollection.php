@@ -19,11 +19,6 @@ class Piwik_Archive_DataCollection
     /**
      * TODO
      */
-    private $indices = array();
-    
-    /**
-     * TODO
-     */
     private $dataNames;
     
     /**
@@ -59,10 +54,12 @@ class Piwik_Archive_DataCollection
     /**
      * TODO
      */
-    public function get($keys)
+    public function get($idSite, $period)
     {
-        $index = $this->getIndex(array_keys($keys));
-        return $this->getRowFromIndex($index, $keys, null);
+        if (!isset($this->data[$idSite][$period])) {
+            $this->data[$idSite][$period] = $this->makeNewDataRow($idSite, $period);
+        }
+        return $this->data[$idSite][$period];
     }
     
     /**
@@ -78,11 +75,7 @@ class Piwik_Archive_DataCollection
      */
     public function getArray($resultIndices)
     {
-        $resultIndices = array_flip($resultIndices);
-        $index = $this->getIndex($resultIndices);
-        
-        $result = $index; // copy array
-        return $this->copyIndexAndSetRows($result);
+        return $this->createIndex($resultIndices);
     }
     
     /**
@@ -90,9 +83,38 @@ class Piwik_Archive_DataCollection
      */
     public function getDataTable($resultIndices)
     {
-        $resultIndices = array_flip($resultIndices);
-        $index = $this->getIndex($resultIndices);
-        return $this->convertToDataTable($resultIndices, $asArray, $this->dataNames);
+        $index = $this->createIndex($resultIndices);
+        return $this->convertToDataTable($resultIndices, $index, $this->dataNames);
+    }
+    
+    /**
+     * TODO
+     */
+    private function createIndex($resultIndices)
+    {
+        $result = array();
+        foreach ($this->data as $idSite => $rowsByPeriod) {
+            foreach ($rowsByPeriod as $period => $row) {
+                $indexKeys = $this->getRowKeys(array_keys($resultIndices), $indexKeys);
+                
+                $this->setIndexRow($result, $indexKeys, $row);
+            }
+        }
+        return $result;
+    }
+    
+    /**
+     * TODO
+     */
+    private function setIndexRow(&$result, $keys, $row)
+    {
+        $firstKey = array_shift($keys);
+        
+        if (empty($keys)) {
+            $result[$firstKey] = $row;
+        } else {
+            $this->setIndexRow($result[$firstKey], $keys, $row);
+        }
     }
     
     /**
@@ -115,67 +137,10 @@ class Piwik_Archive_DataCollection
             $dataName .= '_' . $idSubtable;
         }
         
-        $resultIndices = array_flip($resultIndices);
-        
-        $index = $this->getIndex($resultIndices);
+        $index = $this->createIndex($resultIndices);
         $dataTable = $this->convertToDataTable($resultIndices, $index, array($nameWithSubtable), $expanded = true,
                                                $addMetadataSubtableId);
         return $dataTable;
-    }
-    
-    /**
-     * TODO
-     */
-    private function getIndex($keyNames)
-    {
-        $indexName = $this->getIndexNameFromKeys($keyNames);
-        
-        if (!isset($this->indices[$indexName])) {
-            $this->indices[$indexName] = array();
-        }
-        
-        if ($this->keySets !== null) {
-            $this->initializeIndex($this->indices[$indexName], $keyNames, $this->keySets);
-        }
-        
-        foreach ($this->data as $rowIndex => $row) {
-            $rowKeys = $this->getRowKeys($keyNames, $row);
-            $this->getRowFromIndex($this->indices[$indexName], $rowKeys, $rowIndex);
-        }
-        
-        return $this->indices[$indexName];
-    }
-    
-    /**
-     * TODO
-     */
-    private function initializeIndex(&$index, $keyNames, $keySets)
-    {
-        $keyName = array_shift($keyNames);
-        
-        foreach ($keySets[$keyName] as $key) {
-            if (!empty($keyNames)) {
-                $index[$key] = array();
-                $this->initializeIndex($index[$key], $keyNames, $keySets);
-            } else {
-                $index[$key] = null;
-            }
-        }
-    }
-    
-    /**
-     * TODO
-     */
-    private function &copyIndexAndSetRows(&$index)
-    {
-        if (is_int($index)) {
-            return $this->data[$index];
-        }
-        
-        foreach ($index as $name => &$child) {
-            $index[$name] = $this->copyIndexAndSetRows($child);
-        }
-        return $index;
     }
     
     /**
@@ -187,8 +152,8 @@ class Piwik_Archive_DataCollection
         if (empty($resultIndices)) {
             return $this->createDataTable($index, $archiveNames, $expanded, $addMetadataSubtableId);
         } else {
-            $resultIndex = reset($resultIndices);
-            $resultIndexLabel = key($resultIndices);
+            $resultIndexLabel = reset($resultIndices);
+            $resultIndex = key($resultIndices);
             
             array_shift($resultIndices);
             
@@ -307,55 +272,11 @@ class Piwik_Archive_DataCollection
     /**
      * TODO
      */
-    private function getRowFromIndex(&$index, $keys, $defaultRowIndex)
+    private function makeNewDataRow($idSite, $period)
     {
-        end($keys);
-        $lastKeyName = key($keys);
-        
-        $result = &$index;
-        foreach ($keys as $name => $value) {
-            if (!isset($result[$value])) {
-                // on the last key, we want to create a new data row, not a new index row
-                if ($name == $lastKeyName) {
-                    if ($defaultRowIndex === null) {
-                        $result[$value] = $this->makeNewDataRow($keys);
-                    } else {
-                        $result[$value] = $defaultRowIndex;
-                    }
-                } else {
-                    $result[$value] = array();
-                }
-            }
-            
-            $result = &$result[$value];
-        }
-        
-        // $result is now an int index into $this->data
-        return $this->data[$result];
-    }
-    
-    /**
-     * TODO
-     */
-    private function getIndexNameFromKeys($keys)
-    {
-        return implode(',', array_keys($keys));
-    }
-    
-    /**
-     * TODO
-     */
-    private function makeNewDataRow($keys)
-    {
-        $this->data[] = $this->defaultRow;
-        
-        end($this->data);
-        $rowId = key($this->data);
-        
-        foreach ($keys as $name => $value) {
-            $this->data[$rowId]['_'.$name] = $value;
-        }
-        
-        return $rowId;
+        $row = $this->defaultRow;
+        $row['_site'] = $idSite;
+        $row['_period'] = $period;
+        return $row;
     }
 }

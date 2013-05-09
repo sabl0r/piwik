@@ -377,6 +377,7 @@ class Piwik_DataTable
     {
         if (is_callable($className)) {
             $className($this);
+            return;
         }
         
         if (!class_exists($className, false)) {
