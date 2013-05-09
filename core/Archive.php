@@ -316,15 +316,12 @@ class Piwik_Archive
         $forceIndexedByDate = false;
         
         // determine site IDs to query from
-        if ($idSite === 'all') {
-            $sites = Piwik_SitesManager_API::getInstance()->getSitesIdWithAtLeastViewAccess($_restrictSitesToLogin);
+        if (is_array($idSite)
+            || $idSite == 'all'
+        ) {
             $forceIndexedBySite = true;
-        } else {
-            if (is_array($idSite)) {
-                $forceIndexedBySite = true;
-            }
-            $sites = Piwik_Site::getIdSitesFromIdSitesString($idSite);
         }
+        $sites = Piwik_Site::getIdSitesFromIdSitesString($idSite);
         
         // if a period date string is detected: either 'last30', 'previous10' or 'YYYY-MM-DD,YYYY-MM-DD'
         if (is_string($strDate)

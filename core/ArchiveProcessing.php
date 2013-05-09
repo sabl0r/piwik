@@ -586,7 +586,7 @@ abstract class Piwik_ArchiveProcessing
 
     /**
      * Returns the name of the numeric table where the archive numeric values are stored
-     *
+     *TODO: remove this and below?
      * @return string
      */
     public function getTableArchiveNumericName()
