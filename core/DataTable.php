@@ -375,7 +375,7 @@ class Piwik_DataTable
      */
     public function filter($className, $parameters = array())
     {
-        if (is_callable($className)) {
+        if ($className instanceof Closure) {
             $className($this);
             return;
         }

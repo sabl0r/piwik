@@ -418,7 +418,7 @@ class Piwik_Archive
         $data = $this->get($names, 'blob', $idSubtable);
         return $data->getArray($this->getResultIndices());
     }
-    
+    public static $doprint = false;
     /**
      * Returns the numeric values of the elements in $names as a DataTable.
      * 
@@ -466,7 +466,7 @@ class Piwik_Archive
     public function getDataTableExpanded($name, $idSubtable = null, $addMetadataSubtableId = true)
     {
         $data = $this->get($name, 'blob', 'all');
-        $dataTable = $data->getExpandedDataTable($idSubtable, $addMetadataSubtableId);
+        $dataTable = $data->getExpandedDataTable($this->getResultIndices(), $idSubtable, $addMetadataSubtableId);
         $this->transformMetadata($dataTable);
         return $dataTable;
     }
@@ -483,7 +483,7 @@ class Piwik_Archive
         }
         
         // apply idSubtable
-        if (!is_null($idSubtable)
+        if ($idSubtable !== null
             && $idSubtable != 'all'
         ) {
             foreach ($archiveNames as &$name) {
@@ -491,8 +491,8 @@ class Piwik_Archive
             }
         }
         
-        $keySets = $this->getDataCollectionKeySets();
-        $result = new Piwik_Archive_DataCollection($archiveNames, $archiveDataType, $defaultRow = null, $keySets);
+        $result = new Piwik_Archive_DataCollection(
+            $archiveNames, $archiveDataType, $this->siteIds, array_keys($this->periods), $defaultRow = null);
         
         // get the archive IDs
         $archiveIds = $this->getArchiveIds($archiveNames);
@@ -503,13 +503,14 @@ class Piwik_Archive
         // create the SQL to select archive data
         $inNames = Piwik_Common::getSqlStringFieldsArray($archiveNames);
         if ($idSubtable != 'all') {
-            $getValuesSql = "SELECT name, value, idsite, date1, date2
+            $getValuesSql = "SELECT name, value, idsite, date1, date2, ts_archived
                                FROM %s
                               WHERE idarchive IN (%s)
                                 AND name IN ($inNames)";
             $bind = array_values($archiveNames);
         } else {
             // select blobs w/ name like "$name_[0-9]+" w/o using RLIKE
+            $name = reset($archiveNames);
             $nameEnd = strlen($name) + 2;
             $getValuesSql = "SELECT value, name, idsite, date1, date2, ts_archived
                                 FROM %s
@@ -530,20 +531,14 @@ class Piwik_Archive
                 $idSite = $row['idsite'];
                 $periodStr = $row['date1'].",".$row['date2'];
                 
-                $collectionKeys = array('site' => $idSite, 'period' => $periodStr);
-                $resultRow = $result->get($collectionKeys);
-                
-                if ($idSubtable != 'all') {
-                    $value = $archiveTableType == 'archive_numeric'
-                        ? (float)$row['value'] : $this->uncompress($row['value']);
-                    
-                    $resultRow[$row['name']] = $value;
-                } else if ($archiveTableType == 'archive_blob') {
+                if ($archiveTableType == 'archive_numeric') {
+                    $value = (float)$row['value'];
+                } else {
                     $value = $this->uncompress($row['value']);
-                    $resultRow[$row['name']] = $value;
-                    
-                    $result->addKey('ts_archived', $row['ts_archived'], $resultRow);
+                    $result->addKey($idSite, $periodStr, 'ts_archived', $row['ts_archived']);
                 }
+                
+                $result->set($idSite, $periodStr, $row['name'], $value);
             }
         }
         
@@ -855,19 +850,12 @@ class Piwik_Archive
     /**
      * TODO
      */
-    private function getDataCollectionKeySets()
-    {
-        return array(
-            'site' => $this->siteIds,
-            'period' => array_keys($this->periods)
-        );
-    }
-    
-    /**
-     * TODO
-     */
     private function transformMetadata($table)
     {
+        if ($table === false) {
+            return false;
+        }
+        
         $self = $this;
         $table->filter(function ($table) use($self) {
             $table->metadata['site'] = new Piwik_Site($table->metadata['site']);

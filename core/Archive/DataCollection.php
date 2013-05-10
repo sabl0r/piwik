@@ -34,21 +34,27 @@ class Piwik_Archive_DataCollection
     /**
      * TODO
      */
-    private $keySets = null;
+    private $sites = null; // TODO: should not be optional. (same w/ below)
     
     /**
      * TODO
      */
-    public function __construct($dataNames, $dataType, $defaultRow = null, $keySets = null)
+    private $periods = null;
+    
+    /**
+     * TODO
+     */
+    public function __construct($dataNames, $dataType, $sites, $periods, $defaultRow = null)
     {
         $this->dataNames = $dataNames;
         $this->dataType = $dataType;
         
         if ($defaultRow === null) {
-            $defaultRow = array_fill_keys(array_keys($dataNames), 0);
+            $defaultRow = array_fill_keys($dataNames, 0);
         }
+        $this->sites = $sites;
+        $this->periods = $periods;
         $this->defaultRow = $defaultRow;
-        $this->keySets = $keySets;
     }
     
     /**
@@ -57,7 +63,7 @@ class Piwik_Archive_DataCollection
     public function get($idSite, $period)
     {
         if (!isset($this->data[$idSite][$period])) {
-            $this->data[$idSite][$period] = $this->makeNewDataRow($idSite, $period);
+            $this->data[$idSite][$period] = $this->makeNewDataRow($idSite, $period); // TODO: code redundancy w/ below
         }
         return $this->data[$idSite][$period];
     }
@@ -65,9 +71,20 @@ class Piwik_Archive_DataCollection
     /**
      * TODO
      */
-    public function addKey($keyName, $keyValue, &$row)
+    public function set($idSite, $period, $name, $value)
     {
-        $row['_'.$keyName] = $keyValue;
+        if (!isset($this->data[$idSite][$period])) {
+            $this->data[$idSite][$period] = $this->makeNewDataRow($idSite, $period);
+        }
+        $this->data[$idSite][$period][$name] = $value;
+    }
+    
+    /**
+     * TODO
+     */
+    public function addKey($idSite, $period, $keyName, $keyValue)
+    {
+        $this->set($idSite, $period, '_'.$keyName, $keyValue);
     }
     
     /**
@@ -92,14 +109,52 @@ class Piwik_Archive_DataCollection
      */
     private function createIndex($resultIndices)
     {
-        $result = array();
+        if (empty($resultIndices)) {
+            if (empty($this->data)) {
+                return false;
+            }
+            
+            $firstSite = reset($this->data);
+            return reset($firstSite);
+        }
+        
+        $result = $this->initializeIndex($resultIndices);
         foreach ($this->data as $idSite => $rowsByPeriod) {
             foreach ($rowsByPeriod as $period => $row) {
-                $indexKeys = $this->getRowKeys(array_keys($resultIndices), $indexKeys);
+                $indexKeys = $this->getRowKeys(array_keys($resultIndices), $row);
                 
                 $this->setIndexRow($result, $indexKeys, $row);
             }
         }
+        return $result;
+    }
+    
+    /**
+     * TODO
+     */
+    private function initializeIndex($resultIndices, $keys = array())
+    {
+        $result = array();
+        
+        if (!empty($resultIndices)) {
+            $index = array_shift($resultIndices);
+            if ($index == 'site') {
+                foreach ($this->sites as $idSite) {
+                    $keys['site'] = $idSite;
+                    $result[$idSite] = $this->initializeIndex($resultIndices, $keys);
+                }
+            } else if ($index == 'period') {
+                foreach ($this->periods as $period) {
+                    $keys['period'] = $period;
+                    $result[$period] = $this->initializeIndex($resultIndices, $keys);
+                }
+            }
+        } else {
+            foreach ($keys as $name => $value) {
+                $result['_'.$name] = $value;
+            }
+        }
+        
         return $result;
     }
     
@@ -138,7 +193,7 @@ class Piwik_Archive_DataCollection
         }
         
         $index = $this->createIndex($resultIndices);
-        $dataTable = $this->convertToDataTable($resultIndices, $index, array($nameWithSubtable), $expanded = true,
+        $dataTable = $this->convertToDataTable($resultIndices, $index, array($dataName), $expanded = true,
                                                $addMetadataSubtableId);
         return $dataTable;
     }
@@ -165,21 +220,26 @@ class Piwik_Archive_DataCollection
     /**
      * TODO
      */
-    private function createDataTable($dataIndex, $archiveNames, $expanded, $addMetadataSubtableId)
+    private function createDataTable($data, $archiveNames, $expanded, $addMetadataSubtableId)
     {
-        if (!is_int($dataIndex)) {
-            throw new Exception("Piwik_Archive_DataCollection: creating datatable w/ the wrong number of indices.");
-        }
-        
-        $data = $this->data[$dataIndex];
-        
         if ($this->dataType == 'blob') {
             if (count($archiveNames) === 1) { // only one record
                 $recordName = reset($archiveNames);
-                $table = Piwik_DataTable::fromBlob($data[$recordName]);
+                if (isset($data[$recordName])) {
+                    $table = Piwik_DataTable::fromBlob($data[$recordName]);
+                } else {
+                    $table = new Piwik_DataTable();
+                }
+                
+                // set metadata
+                foreach ($data as $name => $value) {
+                    if (substr($name, 0, 1) == '_') {
+                        $table->setMetadata(substr($name, 1), $value);
+                    }
+                }
                 
                 if ($expanded) {
-                    $this->fillSubtables($recordName, $table, $data, $addMetadataSubtableId);
+                    $this->setSubtables($recordName, $table, $data, $addMetadataSubtableId);
                 }
                 
                 return $table;
@@ -195,7 +255,11 @@ class Piwik_Archive_DataCollection
                 return $table;
             }
         } else {
-            $table = new Piwik_DataTable();
+            $table = new Piwik_DataTable_Simple();
+            
+            if ($data === false) {
+                $data = $this->defaultRow;
+            }
             
             $row = new Piwik_DataTable_Row();
             foreach ($data as $name => $value) {
@@ -205,8 +269,8 @@ class Piwik_Archive_DataCollection
                     $row->setColumn($name, $value);
                 }
             }
-            
             $table->addRow($row);
+            
             return $table;
         }
     }
@@ -233,7 +297,7 @@ class Piwik_Archive_DataCollection
      */
     private function setSubtables($dataName, $dataTable, $blobRow, $addMetadataSubtableId)
     {
-        foreach ($table->getRows() as $row) {
+        foreach ($dataTable->getRows() as $row) {
             $sid = $row->getIdSubDataTable();
             if ($sid === null) {
                 continue;
