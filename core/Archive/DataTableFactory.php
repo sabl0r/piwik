@@ -37,10 +37,16 @@ class Piwik_Archive_DataTableFactory
     /**
      * TODO
      */
-    public function __construct($dataNames, $dataType)
+    private $periods = false;
+    
+    /**
+     * TODO
+     */
+    public function __construct($dataNames, $dataType, $periods)
     {
         $this->dataNames = $dataNames;
         $this->dataType = $dataType;
+        $this->periods = $periods;
     }
     
     /**
@@ -71,21 +77,22 @@ class Piwik_Archive_DataTableFactory
     {
         if (count($this->dataNames) === 1) { // only one record
             $recordName = reset($this->dataNames);
-            if (isset($data[$recordName])) {
-                $table = Piwik_DataTable::fromBlob($data[$recordName]);
+            if (isset($blobRow[$recordName])) {
+                $table = Piwik_DataTable::fromBlob($blobRow[$recordName]);
             } else {
                 $table = new Piwik_DataTable();
             }
             
             // set metadata
-            foreach ($data as $name => $value) {
+            foreach ($blobRow as $name => $value) {
                 if (substr($name, 0, 1) == '_') {
                     $table->setMetadata(substr($name, 1), $value);
                 }
             }
             
             if ($this->expandDataTable) {
-                $this->setSubtables($table, $data);
+                $table->enableRecursiveFilters();
+                $this->setSubtables($table, $blobRow);
             }
             
             return $table;
@@ -93,7 +100,7 @@ class Piwik_Archive_DataTableFactory
             $table = new Piwik_DataTable_Array();
             $table->setKeyName('recordName');
             
-            foreach ($data as $name => $blob) {
+            foreach ($blobRow as $name => $blob) {
                 $newTable = Piwik_DataTable::fromBlob($blob);
                 $table->addTable($newTable, $name);
             }
@@ -119,7 +126,10 @@ class Piwik_Archive_DataTableFactory
             $keyMetadata[$resultIndex] = $label;
             $newTable = $this->make($value, $resultIndices, $keyMetadata);
             
-            $result->addTable($newTable, $label); // TODO: prettify if label is period
+            if ($resultIndexLabel == 'period') { // prettify period labels
+                $label = $this->periods[$label]->getPrettyDate();
+            }
+            $result->addTable($newTable, $label);
         }
         
         return $result;

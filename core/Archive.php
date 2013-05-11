@@ -492,7 +492,7 @@ class Piwik_Archive
         }
         
         $result = new Piwik_Archive_DataCollection(
-            $archiveNames, $archiveDataType, $this->siteIds, array_keys($this->periods), $defaultRow = null);
+            $archiveNames, $archiveDataType, $this->siteIds, $this->periods, $defaultRow = null);
         
         // get the archive IDs
         $archiveIds = $this->getArchiveIds($archiveNames);

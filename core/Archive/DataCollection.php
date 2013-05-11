@@ -111,10 +111,10 @@ class Piwik_Archive_DataCollection
      */
     public function getDataTable($resultIndices, $expanded = false, $addMetadataSubtableId = false)
     {
-        $dataTableFactory = new Piwik_Archive_DataTableFactory($this->dataNames, $this->dataType);
+        $dataTableFactory = new Piwik_Archive_DataTableFactory($this->dataNames, $this->dataType, $this->periods);
         
         if (empty($resultIndices)) {
-            return $this->getNonIndexedDataTable();
+            return $this->getNonIndexedDataTable($dataTableFactory);
         }
         
         $index = $this->createIndex($resultIndices);
@@ -124,23 +124,33 @@ class Piwik_Archive_DataCollection
     /**
      * TODO
      */
-    private function getNonIndexedDataTable($dataTableFactory)
+    private function getNonIndexedDataTable($dataTableFactory) // TODO: move private functions away
     {
         if (empty($this->data)) {
-            $result = new Piwik_DataTable();
-        } else {
             if ($this->dataType == 'blob') {
-                $result = $dataTableFactory->makeFromBlobRow($this->getFirstDataRow()); // TODO
-            } else {
                 $result = new Piwik_DataTable();
+            } else {
+                $result = new Piwik_DataTable_Simple();
                 $result->addRow(new Piwik_DataTable_Row(array(
                     Piwik_DataTable_Row::COLUMNS => $this->defaultRow
+                )));
+            }
+        } else {
+            if ($this->dataType == 'blob') {
+                $result = $dataTableFactory->makeFromBlobRow($this->getFirstDataRow());
+            } else {
+                $result = new Piwik_DataTable_Simple();
+                $result->addRow(new Piwik_DataTable_Row(array(
+                    Piwik_DataTable_Row::COLUMNS => $this->getFirstDataRow()
                 )));
             }
         }
         
         $result->setMetadata('site', reset($this->sites));
-        $result->setMetadata('period', reset($this->periods));
+        
+        reset($this->periods);
+        $result->setMetadata('period', key($this->periods));
+        
         return $result;
     }
     
@@ -183,7 +193,7 @@ class Piwik_Archive_DataCollection
                     $result[$idSite] = $this->initializeIndex($resultIndices);
                 }
             } else if ($index == 'period') {
-                foreach ($this->periods as $period) {
+                foreach ($this->periods as $period => $periodObject) {
                     $result[$period] = $this->initializeIndex($resultIndices);
                 }
             }
@@ -226,13 +236,12 @@ class Piwik_Archive_DataCollection
             $dataName .= '_' . $idSubtable;
         }
         
-        $dataTableFactory = new Piwik_Archive_DataTableFactory(array($dataName), 'blob');
+        $dataTableFactory = new Piwik_Archive_DataTableFactory(array($dataName), 'blob', $this->periods);
+        $dataTableFactory->expandDataTable($addMetadataSubtableId);
         
         if (empty($resultIndices)) {
             return $this->getNonIndexedDataTable($dataTableFactory);
         }
-        
-        $dataTableFactory->expandDataTable($addMetadataSubtableId);
         
         $index = $this->createIndex($resultIndices);
         return $dataTableFactory->make($index, $resultIndices);
