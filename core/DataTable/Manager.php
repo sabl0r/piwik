@@ -39,7 +39,7 @@ class Piwik_DataTable_Manager
      *
      * @var array
      */
-    protected $tables = array();
+    public $tables = array(); // TODO: change back
 
     /**
      * Id of the next inserted table id in the Manager

@@ -47,6 +47,11 @@ class Piwik_Archive_DataTableFactory
     /**
      * TODO
      */
+    private $idSubtable = null;
+    
+    /**
+     * TODO
+     */
     public function __construct($dataNames, $dataType, $sites, $periods)
     {
         $this->dataNames = $dataNames;
@@ -62,6 +67,14 @@ class Piwik_Archive_DataTableFactory
     {
         $this->expandDataTable = true;
         $this->addMetadataSubtableId = $addMetadataSubtableId;
+    }
+    
+    /**
+     * TODO
+     */
+    public function useSubtable($idSubtable)
+    {
+        $this->idSubtable = $idSubtable;
     }
     
     /**
@@ -83,6 +96,10 @@ class Piwik_Archive_DataTableFactory
     {
         if (count($this->dataNames) === 1) { // only one record
             $recordName = reset($this->dataNames);
+            if ($this->idSubtable !== null) {
+                $recordName .= '_' . $this->idSubtable;
+            }
+            
             if (isset($blobRow[$recordName])) {
                 $table = Piwik_DataTable::fromBlob($blobRow[$recordName]);
             } else {

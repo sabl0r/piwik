@@ -17,7 +17,7 @@ class Piwik_Archive_DataCollection
     /**
      * TODO
      */
-    private $data = array();
+    public $data = array(); // TODO: make private
     
     /**
      * TODO
@@ -234,13 +234,9 @@ class Piwik_Archive_DataCollection
                                . "more than one record.");
         }
         
-        $dataName = reset($this->dataNames);
-        if ($idSubtable !== null) {
-            $dataName .= '_' . $idSubtable;
-        }
-        
-        $dataTableFactory = new Piwik_Archive_DataTableFactory(array($dataName), 'blob', $this->sites, $this->periods);
+        $dataTableFactory = new Piwik_Archive_DataTableFactory($this->dataNames, 'blob', $this->sites, $this->periods);
         $dataTableFactory->expandDataTable($addMetadataSubtableId);
+        $dataTableFactory->useSubtable($idSubtable);
         
         if (empty($resultIndices)) {
             return $this->getNonIndexedDataTable($dataTableFactory);

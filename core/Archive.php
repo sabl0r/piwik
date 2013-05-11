@@ -573,7 +573,7 @@ class Piwik_Archive
         // cache id archives for plugins we haven't processed yet
         if (!empty($reportsToArchive)) {
             if (!$this->isArchivingDisabled()) {
-                $this->getArchiveIdsAfterLaunching($reportsToArchive);
+                $this->getArchiveIdsAfterLaunching($reportsToArchive); // TODO: rename this & below to cacheArchiveIds...
             } else {
                 $this->getArchiveIdsWithoutLaunching($reportsToArchive);
             }
@@ -586,9 +586,12 @@ class Piwik_Archive
                 continue;
             }
             
-            foreach ($this->idarchives[$doneFlag] as $dateRange => $idarchive) {
+            foreach ($this->idarchives[$doneFlag] as $dateRange => $idarchives) {
                 $tableMonth = $this->getTableMonthFromDateRange($dateRange);
-                $idArchivesByMonth[$tableMonth][] = $idarchive;
+                
+                foreach ($idarchives as $id) {
+                    $idArchivesByMonth[$tableMonth][] = $id;
+                }
             }
         }
         
@@ -600,13 +603,12 @@ class Piwik_Archive
      */
     private function getArchiveIdsAfterLaunching($requestedReports)
     {
-        $result = array();
         $today = Piwik_Date::today();
         
         // for every individual query permutation, launch the archiving process and get the archive ID
         foreach ($this->getPeriodsByTableMonth() as $tableMonth => $periods) {
             foreach ($this->siteIds as $idSite) {
-                $site = new Piwik_Site($idSite);
+                $site = new Piwik_Site($idSite); // TODO: don't need to create a Site instance
 
                 foreach ($periods as $period) {
                     $periodStr = $period->getRangeString();
@@ -651,18 +653,13 @@ class Piwik_Archive
                             continue;
                         }
                         
-                        // store & cache the archive ID
-                        $result[$tableMonth][] = $idArchive;
-                        
                         $doneFlag = Piwik_ArchiveProcessing::getDoneStringFlagFor(
                             $this->segment, $period->getLabel(), $report);
-                        $this->idarchives[$doneFlag][$periodStr] = $idArchive;
+                        $this->idarchives[$doneFlag][$periodStr][] = $idArchive;
                     }
                 }
             }
         }
-        
-        return $result;
     }
     
     /**
@@ -693,7 +690,6 @@ class Piwik_Archive
                            GROUP BY idsite, date1, date2";
         
         // for every month within the archive query, select from numeric table
-        $result = array();
         foreach ($this->getPeriodsByTableMonth() as $tableMonth => $subPeriods) {
             $firstPeriod = $subPeriods[0];
             $table = Piwik_Common::prefixTable("archive_numeric_$tableMonth");
@@ -724,15 +720,9 @@ class Piwik_Archive
                 $idSite = (int)$row['idsite'];
                 
                 $doneFlag = Piwik_ArchiveProcessing::getDoneStringFlagFor($this->segment, $periodType, $row['name']);
-                $this->idarchives[$doneFlag][$dateStr] = $row['idarchive'];
-            }
-            
-            if (!empty($archiveIds)) {
-                $result[$tableMonth] = $archiveIds;
+                $this->idarchives[$doneFlag][$dateStr][] = $row['idarchive'];
             }
         }
-        
-        return $result;
     }
     
     /**
