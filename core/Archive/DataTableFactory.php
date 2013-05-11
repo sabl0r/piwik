@@ -37,15 +37,21 @@ class Piwik_Archive_DataTableFactory
     /**
      * TODO
      */
-    private $periods = false;
+    private $sites;
     
     /**
      * TODO
      */
-    public function __construct($dataNames, $dataType, $periods)
+    private $periods;
+    
+    /**
+     * TODO
+     */
+    public function __construct($dataNames, $dataType, $sites, $periods)
     {
         $this->dataNames = $dataNames;
         $this->dataType = $dataType;
+        $this->sites = $sites;
         $this->periods = $periods;
     }
     
@@ -126,8 +132,8 @@ class Piwik_Archive_DataTableFactory
             $keyMetadata[$resultIndex] = $label;
             $newTable = $this->make($value, $resultIndices, $keyMetadata);
             
-            if ($resultIndexLabel == 'period') { // prettify period labels
-                $label = $this->periods[$label]->getPrettyDate();
+            if ($resultIndex == 'period') { // prettify period labels
+                $label = $this->periods[$label]->getPrettyString();
             }
             $result->addTable($newTable, $label);
         }
@@ -156,6 +162,15 @@ class Piwik_Archive_DataTableFactory
             $table->addRow($row);
             
             $result = $table;
+        }
+        
+        if (!isset($keyMetadata['site'])) { // TODO: need the other specialization in DataCollection.php?
+            $keyMetadata['site'] = reset($this->sites);
+        }
+        
+        if (!isset($keyMetadata['period'])) {
+            reset($this->periods);
+            $keyMetadata['period'] = key($this->periods);
         }
         
         foreach ($keyMetadata as $name => $value) {

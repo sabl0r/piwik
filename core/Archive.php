@@ -418,7 +418,7 @@ class Piwik_Archive
         $data = $this->get($names, 'blob', $idSubtable);
         return $data->getArray($this->getResultIndices());
     }
-    public static $doprint = false;
+    
     /**
      * Returns the numeric values of the elements in $names as a DataTable.
      * 
@@ -431,7 +431,9 @@ class Piwik_Archive
     public function getDataTableFromNumeric($names)
     {
         $data = $this->get($names, 'numeric');
-        return $data->getDataTable($this->getResultIndices());
+        $dataTable = $data->getDataTable($this->getResultIndices());
+        $this->transformMetadata($dataTable);
+        return $dataTable;
     }
 
     /**
@@ -852,10 +854,6 @@ class Piwik_Archive
      */
     private function transformMetadata($table)
     {
-        if ($table === false) {
-            return false;
-        }
-        
         $self = $this;
         $table->filter(function ($table) use($self) {
             $table->metadata['site'] = new Piwik_Site($table->metadata['site']);

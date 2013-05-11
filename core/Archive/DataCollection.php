@@ -111,7 +111,8 @@ class Piwik_Archive_DataCollection
      */
     public function getDataTable($resultIndices, $expanded = false, $addMetadataSubtableId = false)
     {
-        $dataTableFactory = new Piwik_Archive_DataTableFactory($this->dataNames, $this->dataType, $this->periods);
+        $dataTableFactory = new Piwik_Archive_DataTableFactory(
+            $this->dataNames, $this->dataType, $this->sites, $this->periods);
         
         if (empty($resultIndices)) {
             return $this->getNonIndexedDataTable($dataTableFactory);
@@ -168,12 +169,14 @@ class Piwik_Archive_DataCollection
      */
     private function createIndex($resultIndices) // TODO: can just make this getArray
     {
-        $result = $this->initializeIndex($resultIndices);
+        $indexKeys = array_keys($resultIndices);
+        
+        $result = $this->initializeIndex($indexKeys);
         foreach ($this->data as $idSite => $rowsByPeriod) {
             foreach ($rowsByPeriod as $period => $row) {
-                $indexKeys = $this->getRowKeys(array_keys($resultIndices), $row, $idSite, $period);
+                $indexRowKeys = $this->getRowKeys($indexKeys, $row, $idSite, $period);
                 
-                $this->setIndexRow($result, $indexKeys, $row);
+                $this->setIndexRow($result, $indexRowKeys, $row);
             }
         }
         return $result;
@@ -182,19 +185,19 @@ class Piwik_Archive_DataCollection
     /**
      * TODO
      */
-    private function initializeIndex($resultIndices)
+    private function initializeIndex($indexKeys)
     {
         $result = array();
         
-        if (!empty($resultIndices)) {
-            $index = array_shift($resultIndices);
+        if (!empty($indexKeys)) {
+            $index = array_shift($indexKeys);
             if ($index == 'site') {
                 foreach ($this->sites as $idSite) {
-                    $result[$idSite] = $this->initializeIndex($resultIndices);
+                    $result[$idSite] = $this->initializeIndex($indexKeys);
                 }
             } else if ($index == 'period') {
                 foreach ($this->periods as $period => $periodObject) {
-                    $result[$period] = $this->initializeIndex($resultIndices);
+                    $result[$period] = $this->initializeIndex($indexKeys);
                 }
             }
         }
@@ -236,7 +239,7 @@ class Piwik_Archive_DataCollection
             $dataName .= '_' . $idSubtable;
         }
         
-        $dataTableFactory = new Piwik_Archive_DataTableFactory(array($dataName), 'blob', $this->periods);
+        $dataTableFactory = new Piwik_Archive_DataTableFactory(array($dataName), 'blob', $this->sites, $this->periods);
         $dataTableFactory->expandDataTable($addMetadataSubtableId);
         
         if (empty($resultIndices)) {
