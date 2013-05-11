@@ -450,7 +450,7 @@ class Piwik_Archive
     {
         $data = $this->get($name, 'blob', $idSubtable);
         $dataTable = $data->getDataTable($this->getResultIndices());
-        $this->transformMetadata($dataTable);
+        $this->transformMetadata($dataTable); // TODO: move to DataTableFactory
         return $dataTable;
     }
     
