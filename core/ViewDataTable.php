@@ -582,7 +582,27 @@ abstract class Piwik_ViewDataTable
                 }
             }
         }
+
+        $segment = $this->getRawSegmentFromRequest();
+        if(!empty($segment)) {
+            $requestString .= '&segment=' . $segment;
+        }
         return $requestString;
+    }
+
+    /**
+     * @return array|bool
+     */
+    static public function getRawSegmentFromRequest()
+    {
+        // we need the URL encoded segment parameter, we fetch it from _SERVER['QUERY_STRING'] instead of default URL decoded _GET
+        $segmentRaw = false;
+        $segment = Piwik_Common::getRequestVar('segment', '', 'string');
+        if (!empty($segment)) {
+            $request = Piwik_API_Request::getRequestParametersGET();
+            $segmentRaw = $request['segment'];
+        }
+        return $segmentRaw;
     }
 
     /**
@@ -761,6 +781,11 @@ abstract class Piwik_ViewDataTable
                 unset($javascriptVariablesToSet[$name]);
             }
         }
+
+        $rawSegment = $this->getRawSegmentFromRequest();
+        $javascriptVariablesToSet['segment'] = $rawSegment;
+
+
         return $javascriptVariablesToSet;
     }
 

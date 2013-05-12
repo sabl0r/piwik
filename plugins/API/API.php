@@ -1161,11 +1161,7 @@ class Piwik_API_API
             throw new Exception("Row evolutions can not be processed with this combination of \'date\' and \'period\' parameters.");
         }
 
-        // this is needed because Piwik_API_Proxy uses Piwik_Common::getRequestVar which in turn
-        // uses Piwik_Common::sanitizeInputValue. This causes the > that separates recursive labels
-        // to become &gt; and we need to undo that here.
-        $label = Piwik_Common::unsanitizeInputValue($label);
-
+        $label = Piwik_API_ResponseBuilder::unsanitizeLabelParameter($label);
         if ($label) {
             $labels = explode(',', $label);
             $labels = array_unique($labels);
@@ -1618,7 +1614,7 @@ class Piwik_API_API
             return array();
         }
 
-        $urls = Piwik_Common::unsanitizeInputValues($urls);
+        $urls = array_map('urldecode', $urls);
 
         $result = array();
         foreach ($urls as $url) {
@@ -1662,7 +1658,7 @@ class Piwik_API_API
 
         // Select non empty fields only
         // Note: this optimization has only a very minor impact
-        $requestLastVisits.= "&segment=$segmentName" . Piwik_SegmentExpression::MATCH_IS_NOT_NULL . "null";
+        $requestLastVisits.= "&segment=$segmentName".urlencode('!=');
 
         // By default Live fetches all actions for all visitors, but we'd rather do this only when required
         if($this->doesSegmentNeedActionsData($segmentName)) {
