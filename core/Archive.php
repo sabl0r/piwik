@@ -398,7 +398,18 @@ class Piwik_Archive
     public function getNumeric($names)
     {
         $data = $this->get($names, 'numeric');
-        return $data->getArray($this->getResultIndices());
+        
+        $resultIndices = $this->getResultIndices();
+        $result = $data->getArray($resultIndices);
+        
+        if (empty($resultIndices)
+            && $result !== false
+            && count($result) == 1
+        ) {
+            $result = reset($result);
+        }
+        
+        return $result;
     }
     
     /**

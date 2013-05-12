@@ -100,7 +100,7 @@ class Piwik_Archive_DataTableFactory
                 $recordName .= '_' . $this->idSubtable;
             }
             
-            if (isset($blobRow[$recordName])) {
+            if (!empty($blobRow[$recordName])) {
                 $table = Piwik_DataTable::fromBlob($blobRow[$recordName]);
             } else {
                 $table = new Piwik_DataTable();
@@ -168,15 +168,17 @@ class Piwik_Archive_DataTableFactory
         } else {
             $table = new Piwik_DataTable_Simple();
             
-            $row = new Piwik_DataTable_Row();
-            foreach ($data as $name => $value) {
-                if (substr($name, 0, 1) == '_') {
-                    $table->setMetadata(substr($name, 1), $value);
-                } else {
-                    $row->setColumn($name, $value);
+            if (!empty($data)) {
+                $row = new Piwik_DataTable_Row();
+                foreach ($data as $name => $value) {
+                    if (substr($name, 0, 1) == '_') {
+                        $table->setMetadata(substr($name, 1), $value);
+                    } else {
+                        $row->setColumn($name, $value);
+                    }
                 }
+                $table->addRow($row);
             }
-            $table->addRow($row);
             
             $result = $table;
         }

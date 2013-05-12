@@ -158,22 +158,17 @@ class Test_Piwik_Integration_OneVisitorTwoVisits extends IntegrationTestCase
      */
     public function testArchiveSinglePreFetchBlob()
     {
-        $cache = array();
         $archive = Piwik_Archive::build(self::$fixture->idSite, 'day', self::$fixture->dateTime);
-        $archive->getBlob('Actions_actions', 'all', $cache);
+        $cache = $archive->getBlob('Actions_actions', 'all');
 
         $foundSubtable = false;
 
         $this->assertTrue(count($cache) > 0, "empty blob cache");
-        foreach ($cache as $idSite => $dates) {
-            foreach ($dates as $date => $blobs) {
-                foreach ($blobs as $name => $value) {
-                    $this->assertTrue(strpos($name, "Actions_actions_url") === false, "found blob w/ name '$name'");
+        foreach ($cache as $name => $value) {
+            $this->assertTrue(strpos($name, "Actions_actions_url") === false, "found blob w/ name '$name'");
 
-                    if (strpos($name, "Actions_actions_") !== false) {
-                        $foundSubtable = true;
-                    }
-                }
+            if (strpos($name, "Actions_actions_") !== false) {
+                $foundSubtable = true;
             }
         }
 
