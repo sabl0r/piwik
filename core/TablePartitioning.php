@@ -107,8 +107,27 @@ class Piwik_TablePartitioning_Monthly extends Piwik_TablePartitioning
         $config = Piwik_Config::getInstance();
         return $config->database['tables_prefix'] . $this->tableName . "_" . date("Y_m", $this->timestamp);
     }
-
+    
+    public static $blobArchiveTable = null;
+    public static $numericArchiveTable = null;
+    
+    /**
+     * TODO
+     */
+    public static function createArchiveTablesIfAbsent($periodInMonth)
+    {
+        $timestamp = $periodInMonth->getDateStart()->getTimestamp();
+        
+        self::$blobArchiveTable->setTimestamp($timestamp);
+        self::$blobArchiveTable->getTableName();
+        
+        self::$numericArchiveTable->setTimestamp($timestamp);
+        self::$numericArchiveTable->getTableName();
+    }
 }
+
+Piwik_TablePartitioning_Monthly::$blobArchiveTable = new Piwik_TablePartitioning_Monthly('archive_blob');
+Piwik_TablePartitioning_Monthly::$numericArchiveTable = new Piwik_TablePartitioning_Monthly('archive_numeric');
 
 /**
  *

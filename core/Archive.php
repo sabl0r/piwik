@@ -705,6 +705,8 @@ class Piwik_Archive
             $firstPeriod = $subPeriods[0];
             $table = Piwik_Common::prefixTable("archive_numeric_$tableMonth");
             
+            Piwik_TablePartitioning_Monthly::createArchiveTablesIfAbsent($firstPeriod);
+            
             // if looking for a range archive. NOTE: we assume there's only one period if its a range.
             $bind = array($firstPeriod->getId());
             if ($firstPeriod instanceof Piwik_Period_Range) {
