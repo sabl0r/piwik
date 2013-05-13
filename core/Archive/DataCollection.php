@@ -17,7 +17,7 @@ class Piwik_Archive_DataCollection
     /**
      * TODO
      */
-    public $data = array(); // TODO: make private
+    private $data = array();
     
     /**
      * TODO
@@ -37,7 +37,7 @@ class Piwik_Archive_DataCollection
     /**
      * TODO
      */
-    private $sites; // TODO: should not be optional. (same w/ below)
+    private $sites;
     
     /**
      * TODO
@@ -63,10 +63,10 @@ class Piwik_Archive_DataCollection
     /**
      * TODO
      */
-    public function get($idSite, $period)
+    public function &get($idSite, $period)
     {
         if (!isset($this->data[$idSite][$period])) {
-            $this->data[$idSite][$period] = $this->makeNewDataRow(); // TODO: code redundancy w/ below
+            $this->data[$idSite][$period] = $this->defaultRow;
         }
         return $this->data[$idSite][$period];
     }
@@ -74,100 +74,16 @@ class Piwik_Archive_DataCollection
     /**
      * TODO
      */
-    public function set($idSite, $period, $name, $value)
-    {
-        if (!isset($this->data[$idSite][$period])) {
-            $this->data[$idSite][$period] = $this->makeNewDataRow();
-        }
-        $this->data[$idSite][$period][$name] = $value;
-    }
-    
-    /**
-     * TODO
-     */
     public function addKey($idSite, $period, $keyName, $keyValue)
     {
-        $this->set($idSite, $period, '_'.$keyName, $keyValue);
+        $row = &$this->get($idSite, $period);
+        $row['_'.$keyName] = $keyValue;
     }
     
     /**
      * TODO
      */
     public function getArray($resultIndices)
-    {
-        if (empty($resultIndices)) {
-            if (empty($this->data)) {
-                return false;
-            }
-            
-            return $this->getFirstDataRow();
-        }
-        
-        return $this->createIndex($resultIndices);
-    }
-    
-    /**
-     * TODO
-     */
-    public function getDataTable($resultIndices, $expanded = false, $addMetadataSubtableId = false)
-    {
-        $dataTableFactory = new Piwik_Archive_DataTableFactory(
-            $this->dataNames, $this->dataType, $this->sites, $this->periods);
-        
-        if (empty($resultIndices)) {
-            return $this->getNonIndexedDataTable($dataTableFactory);
-        }
-        
-        $index = $this->createIndex($resultIndices);
-        return $dataTableFactory->make($index, $resultIndices);
-    }
-    
-    /**
-     * TODO
-     */
-    private function getNonIndexedDataTable($dataTableFactory) // TODO: move private functions away
-    {
-        if (empty($this->data)) {
-            if ($this->dataType == 'blob') {
-                $result = new Piwik_DataTable();
-            } else {
-                $result = new Piwik_DataTable_Simple();
-                $result->addRow(new Piwik_DataTable_Row(array(
-                    Piwik_DataTable_Row::COLUMNS => $this->defaultRow
-                )));
-            }
-        } else {
-            if ($this->dataType == 'blob') {
-                $result = $dataTableFactory->makeFromBlobRow($this->getFirstDataRow());
-            } else {
-                $result = new Piwik_DataTable_Simple();
-                $result->addRow(new Piwik_DataTable_Row(array(
-                    Piwik_DataTable_Row::COLUMNS => $this->getFirstDataRow()
-                )));
-            }
-        }
-        
-        $result->setMetadata('site', reset($this->sites));
-        
-        reset($this->periods);
-        $result->setMetadata('period', key($this->periods));
-        
-        return $result;
-    }
-    
-    /**
-     * TODO
-     */
-    private function getFirstDataRow()
-    {
-        $firstSite = reset($this->data);
-        return reset($firstSite);
-    }
-    
-    /**
-     * TODO
-     */
-    private function createIndex($resultIndices) // TODO: can just make this getArray
     {
         $indexKeys = array_keys($resultIndices);
         
@@ -180,6 +96,42 @@ class Piwik_Archive_DataCollection
             }
         }
         return $result;
+    }
+    
+    /**
+     * TODO
+     */
+    public function getDataTable($resultIndices, $expanded = false, $addMetadataSubtableId = false)
+    {
+        $dataTableFactory = new Piwik_Archive_DataTableFactory(
+            $this->dataNames, $this->dataType, $this->sites, $this->periods, $this->defaultRow);
+        
+        $index = $this->getArray($resultIndices);
+        return $dataTableFactory->make($index, $resultIndices);
+    }
+    
+    /**
+     * TODO
+     */
+    public function getExpandedDataTable($resultIndices, $idSubtable = null, $addMetadataSubtableId = false)
+    {
+        if ($this->dataType != 'blob') {
+            throw new Exception("Piwik_Archive_DataCollection: cannot call getExpandedDataTable with "
+                               . "{$this->dataType} data types. Only works with blob data.");
+        }
+        
+        if (count($this->dataNames) !== 1) {
+            throw new Exception("Piwik_Archive_DataCollection: cannot call getExpandedDataTable with "
+                               . "more than one record.");
+        }
+        
+        $dataTableFactory = new Piwik_Archive_DataTableFactory(
+            $this->dataNames, 'blob', $this->sites, $this->periods, $this->defaultRow);
+        $dataTableFactory->expandDataTable($addMetadataSubtableId);
+        $dataTableFactory->useSubtable($idSubtable);
+        
+        $index = $this->getArray($resultIndices);
+        return $dataTableFactory->make($index, $resultIndices);
     }
     
     /**
@@ -210,40 +162,16 @@ class Piwik_Archive_DataCollection
      */
     private function setIndexRow(&$result, $keys, $row)
     {
-        $firstKey = array_shift($keys);
+        $keyCount = count($keys);
         
-        if (empty($keys)) {
-            $result[$firstKey] = $row;
-        } else {
+        if ($keyCount > 1) {
+            $firstKey = array_shift($keys);
             $this->setIndexRow($result[$firstKey], $keys, $row);
+        } else if ($keyCount == 1) {
+            $result[reset($keys)] = $row;
+        } else {
+            $result = $row;
         }
-    }
-    
-    /**
-     * TODO
-     */
-    public function getExpandedDataTable($resultIndices, $idSubtable = null, $addMetadataSubtableId = false)
-    {
-        if ($this->dataType != 'blob') {
-            throw new Exception("Piwik_Archive_DataCollection: cannot call getExpandedDataTable with "
-                               . "{$this->dataType} data types. Only works with blob data.");
-        }
-        
-        if (count($this->dataNames) !== 1) {
-            throw new Exception("Piwik_Archive_DataCollection: cannot call getExpandedDataTable with "
-                               . "more than one record.");
-        }
-        
-        $dataTableFactory = new Piwik_Archive_DataTableFactory($this->dataNames, 'blob', $this->sites, $this->periods);
-        $dataTableFactory->expandDataTable($addMetadataSubtableId);
-        $dataTableFactory->useSubtable($idSubtable);
-        
-        if (empty($resultIndices)) {
-            return $this->getNonIndexedDataTable($dataTableFactory);
-        }
-        
-        $index = $this->createIndex($resultIndices);
-        return $dataTableFactory->make($index, $resultIndices);
     }
     
     /**
@@ -267,9 +195,9 @@ class Piwik_Archive_DataCollection
     /**
      * TODO
      */
-    private function makeNewDataRow()
+    private function getFirstDataRow()
     {
-        $row = $this->defaultRow;
-        return $row;
+        $firstSite = reset($this->data);
+        return reset($firstSite);
     }
 }

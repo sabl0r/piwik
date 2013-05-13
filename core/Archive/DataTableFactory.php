@@ -52,12 +52,18 @@ class Piwik_Archive_DataTableFactory
     /**
      * TODO
      */
-    public function __construct($dataNames, $dataType, $sites, $periods)
+    private $defaultRow;
+    
+    /**
+     * TODO
+     */
+    public function __construct($dataNames, $dataType, $sites, $periods, $defaultRow)
     {
         $this->dataNames = $dataNames;
         $this->dataType = $dataType;
         $this->sites = $sites;
         $this->periods = $periods;
+        $this->defaultRow = $defaultRow;
     }
     
     /**
@@ -80,20 +86,33 @@ class Piwik_Archive_DataTableFactory
     /**
      * TODO
      */
-    public function make($index, $resultIndices, $keyMetadata = array())
+    public function make($index, $resultIndices)
     {
         if (empty($resultIndices)) {
-            return $this->createDataTable($index, $keyMetadata);
+            if (empty($index)
+                && $this->dataType == 'numeric'
+            ) {
+                $index = $this->defaultRow;
+            }
+            
+            $dataTable = $this->createDataTable($index, $keyMetadata = array());
         } else {
-            return $this->createDataTableArrayFromIndex($index, $resultIndices, $keyMetadata);
+            $dataTable = $this->createDataTableArrayFromIndex($index, $resultIndices);
         }
+        
+        $this->transformMetadata($dataTable);
+        return $dataTable;
     }
-    
+
     /**
      * TODO
      */
     public function makeFromBlobRow($blobRow)
     {
+        if ($blobRow === false) {
+            return new Piwik_DataTable();
+        }
+        
         if (count($this->dataNames) === 1) { // only one record
             $recordName = reset($this->dataNames);
             if ($this->idSubtable !== null) {
@@ -135,7 +154,7 @@ class Piwik_Archive_DataTableFactory
     /**
      * TODO
      */
-    private function createDataTableArrayFromIndex($index, $resultIndices, $keyMetadata)
+    private function createDataTableArrayFromIndex($index, $resultIndices, $keyMetadata = array())
     {
         $resultIndexLabel = reset($resultIndices);
         $resultIndex = key($resultIndices);
@@ -147,12 +166,14 @@ class Piwik_Archive_DataTableFactory
         
         foreach ($index as $label => $value) {
             $keyMetadata[$resultIndex] = $label;
-            $newTable = $this->make($value, $resultIndices, $keyMetadata);
             
-            if ($resultIndex == 'period') { // prettify period labels
-                $label = $this->periods[$label]->getPrettyString();
+            if (empty($resultIndices)) {
+                $newTable = $this->createDataTable($value, $keyMetadata);
+            } else {
+                $newTable = $this->createDataTableArrayFromIndex($value, $resultIndices, $keyMetadata);
             }
-            $result->addTable($newTable, $label);
+            
+            $result->addTable($newTable, $this->prettifyIndexLabel($resultIndex, $label));
         }
         
         return $result;
@@ -183,7 +204,7 @@ class Piwik_Archive_DataTableFactory
             $result = $table;
         }
         
-        if (!isset($keyMetadata['site'])) { // TODO: need the other specialization in DataCollection.php?
+        if (!isset($keyMetadata['site'])) {
             $keyMetadata['site'] = reset($this->sites);
         }
         
@@ -228,5 +249,28 @@ class Piwik_Archive_DataTableFactory
                 $row->setSubtable($subtable);
             }
         }
+    }
+    
+    /**
+     * TODO
+     */
+    private function transformMetadata($table)
+    {
+        $self = $this;
+        $table->filter(function ($table) use($self) {
+            $table->metadata['site'] = new Piwik_Site($table->metadata['site']);
+            $table->metadata['period'] = $self->periods[$table->metadata['period']];
+        });
+    }
+    
+    /**
+     * TODO
+     */
+    private function prettifyIndexLabel($labelType, $label)
+    {
+        if ($labelType == 'period') { // prettify period labels
+            return $this->periods[$label]->getPrettyString();
+        }
+        return $label;
     }
 }

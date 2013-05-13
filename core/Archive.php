@@ -10,10 +10,9 @@
  */
 /**
 // TODO: for getDataTableNumeric, this means one row per site/period. is this correct? Will this be the case for every get... method? Need to make this clear somewhere, piwik docs don't mention anything about this.
-// TODO: add test for ts_archived (in metadata)
 // TODO: create ticket for this: when building archives, should use each site's timezone (ONLY FOR 'now'). 
 */
-/**
+/** TODO: limitations: can only query for one range period at a time. can query for multiple periods, but they must be the same type of period.
  * The archive object is used to query specific data for a day or a period of statistics for a given website.
  *
  * Example:
@@ -402,11 +401,11 @@ class Piwik_Archive
         $resultIndices = $this->getResultIndices();
         $result = $data->getArray($resultIndices);
         
+        // if only one metric is returned, just return it as a numeric value
         if (empty($resultIndices)
-            && $result !== false
-            && count($result) == 1
+            && count($result) <= 1
         ) {
-            $result = reset($result);
+            $result = (float)reset($result); // convert to float in case $result is empty
         }
         
         return $result;
@@ -442,9 +441,7 @@ class Piwik_Archive
     public function getDataTableFromNumeric($names)
     {
         $data = $this->get($names, 'numeric');
-        $dataTable = $data->getDataTable($this->getResultIndices());
-        $this->transformMetadata($dataTable);
-        return $dataTable;
+        return $data->getDataTable($this->getResultIndices());
     }
 
     /**
@@ -462,9 +459,7 @@ class Piwik_Archive
     public function getDataTable($name, $idSubtable = null)
     {
         $data = $this->get($name, 'blob', $idSubtable);
-        $dataTable = $data->getDataTable($this->getResultIndices());
-        $this->transformMetadata($dataTable); // TODO: move to DataTableFactory
-        return $dataTable;
+        return $data->getDataTable($this->getResultIndices());
     }
     
     /**
@@ -479,9 +474,7 @@ class Piwik_Archive
     public function getDataTableExpanded($name, $idSubtable = null, $addMetadataSubtableId = true)
     {
         $data = $this->get($name, 'blob', 'all');
-        $dataTable = $data->getExpandedDataTable($this->getResultIndices(), $idSubtable, $addMetadataSubtableId);
-        $this->transformMetadata($dataTable);
-        return $dataTable;
+        return $data->getExpandedDataTable($this->getResultIndices(), $idSubtable, $addMetadataSubtableId);
     }
     
     /**
@@ -515,15 +508,10 @@ class Piwik_Archive
         
         // create the SQL to select archive data
         $inNames = Piwik_Common::getSqlStringFieldsArray($archiveNames);
-        if ($idSubtable != 'all') {
-            $getValuesSql = "SELECT name, value, idsite, date1, date2, ts_archived
-                               FROM %s
-                              WHERE idarchive IN (%s)
-                                AND name IN ($inNames)";
-            $bind = array_values($archiveNames);
-        } else {
-            // select blobs w/ name like "$name_[0-9]+" w/o using RLIKE
+        if ($idSubtable == 'all') {
             $name = reset($archiveNames);
+            
+            // select blobs w/ name like "$name_[0-9]+" w/o using RLIKE
             $nameEnd = strlen($name) + 2;
             $getValuesSql = "SELECT value, name, idsite, date1, date2, ts_archived
                                 FROM %s
@@ -532,6 +520,12 @@ class Piwik_Archive
                                             (name LIKE ? AND SUBSTRING(name, $nameEnd, 1) >= '0'
                                                          AND SUBSTRING(name, $nameEnd, 1) <= '9') )";
             $bind = array($name, $name.'%');
+        } else {
+            $getValuesSql = "SELECT name, value, idsite, date1, date2, ts_archived
+                               FROM %s
+                              WHERE idarchive IN (%s)
+                                AND name IN ($inNames)";
+            $bind = array_values($archiveNames);
         }
         
         // get data from every table we're querying
@@ -551,7 +545,8 @@ class Piwik_Archive
                     $result->addKey($idSite, $periodStr, 'ts_archived', $row['ts_archived']);
                 }
                 
-                $result->set($idSite, $periodStr, $row['name'], $value);
+                $resultRow = &$result->get($idSite, $periodStr);
+                $resultRow[$row['name']] = $value;
             }
         }
         
@@ -568,7 +563,8 @@ class Piwik_Archive
     {
         $requestedReports = $this->getRequestedReports($archiveNames);
         
-        // figure out which archives haven't been processed
+        // figure out which archives haven't been processed (if an archive has been processed,
+        // then we have the archive IDs in $this->idarchives)
         $doneFlags = array();
         $reportsToArchive = array();
         foreach ($requestedReports as $report) {
@@ -584,9 +580,9 @@ class Piwik_Archive
         // cache id archives for plugins we haven't processed yet
         if (!empty($reportsToArchive)) {
             if (!$this->isArchivingDisabled()) {
-                $this->getArchiveIdsAfterLaunching($reportsToArchive); // TODO: rename this & below to cacheArchiveIds...
+                $this->cacheArchiveIdsAfterLaunching($reportsToArchive);
             } else {
-                $this->getArchiveIdsWithoutLaunching($reportsToArchive);
+                $this->cacheArchiveIdsWithoutLaunching($reportsToArchive);
             }
         }
         
@@ -612,7 +608,7 @@ class Piwik_Archive
     /**
      * TODO
      */
-    private function getArchiveIdsAfterLaunching($requestedReports)
+    private function cacheArchiveIdsAfterLaunching($requestedReports)
     {
         $today = Piwik_Date::today();
         
@@ -688,7 +684,7 @@ class Piwik_Archive
     /**
      * TODO
      */
-    private function getArchiveIdsWithoutLaunching($requestedReports)
+    private function cacheArchiveIdsWithoutLaunching($requestedReports)
     {
         $periodType = $this->getPeriodLabel();
         
@@ -725,12 +721,8 @@ class Piwik_Archive
             $sql = sprintf($getArchiveIdsSql, $table, $dateCondition);
             
             // get the archive IDs
-            $archiveIds = array();
             foreach (Piwik_FetchAll($sql, $bind) as $row) {
-                $archiveIds[] = $row['idarchive'];
-                
                 $dateStr = $row['date1'].",".$row['date2'];
-                $idSite = (int)$row['idsite'];
                 
                 $doneFlag = Piwik_ArchiveProcessing::getDoneStringFlagFor($this->segment, $periodType, $row['name']);
                 $this->idarchives[$doneFlag][$dateStr][] = $row['idarchive'];
@@ -853,18 +845,6 @@ class Piwik_Archive
     }
     
     /**
-     * TODO
-     */
-    private function transformMetadata($table)
-    {
-        $self = $this;
-        $table->filter(function ($table) use($self) {
-            $table->metadata['site'] = new Piwik_Site($table->metadata['site']);
-            $table->metadata['period'] = $self->periods[$table->metadata['period']];
-        });
-    }
-    
-    /**
      * Helper - Loads a DataTable from the Archive.
      * Optionally loads the table recursively,
      * or optionally fetches a given subtable with $idSubtable
@@ -959,9 +939,6 @@ class Piwik_Archive
         return Piwik_ArchiveProcessing::isArchivingDisabledFor($this->segment, $this->getPeriodLabel());
     }
     
-    /**
-     * TODO
-     */
     private function getArchiveDescriptor($idSite, $period)
     {
         return "site $idSite, {$period->getLabel()} ({$period->getPrettyString()})";
@@ -972,9 +949,6 @@ class Piwik_Archive
         return @gzuncompress($data);
     }
     
-    /**
-     * TODO
-     */
     private function getAsNonEmptyArray($array, $paramName)
     {
         if (!is_array($array)) {
