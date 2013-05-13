@@ -10,42 +10,95 @@
  */
 
 /**
- * TODO
+ * This class is used to hold and transform archive data for the Piwik_Archive class.
+ * 
+ * Archive data is loaded into an instance of this type, can be indexed by archive
+ * metadata (such as the site ID, period string, etc.), and can be transformed into
+ * Piwik_DataTable and Piwik_DataTable_Array instances.
  */
 class Piwik_Archive_DataCollection
 {
     /**
-     * TODO
+     * The archive data, indexed first by site ID and then by period date range. Eg,
+     * 
+     * array(
+     *     '0' => array(
+     *         array(
+     *             '2012-01-01,2012-01-01' => array(...),
+     *             '2012-01-02,2012-01-02' => array(...),
+     *         )
+     *     ),
+     *     '1' => array(
+     *         array(
+     *             '2012-01-01,2012-01-01' => array(...),
+     *         )
+     *     )
+     * )
+     * 
+     * Archive data can be either a numeric value or a serialized string blob. Every
+     * piece of archive data is associated by it's archive name. For example,
+     * the array(...) above could look like:
+     * 
+     * array(
+     *    'nb_visits' => 1,
+     *    'nb_actions' => 2
+     * )
+     * 
+     * Elements in data rows that are prepended with an underscore (eg, _ts_archived)
+     * are treated as DataTable metadata.
      */
     private $data = array();
     
     /**
-     * TODO
+     * The whole list of metric/record names that were used in the archive query.
+     * 
+     * @var array
      */
     private $dataNames;
     
     /**
-     * TODO
+     * The type of data that was queried for (ie, "blob" or "numeric").
+     * 
+     * @var string
      */
     private $dataType;
     
     /**
-     * TODO
+     * The default values to use for each metric/record name that's being queried
+     * for.
+     * 
+     * @var array
      */
     private $defaultRow;
     
     /**
-     * TODO
+     * The list of all site IDs that were queried for.
+     * 
+     * @var array
      */
     private $sites;
     
     /**
-     * TODO
+     * The list of all periods that were queried for. Each period is associated with
+     * the period's range string. Eg,
+     * 
+     * array(
+     *     '2012-01-01,2012-01-31' => new Piwik_Period(...),
+     *     '2012-02-01,2012-02-28' => new Piwik_Period(...),
+     * )
+     * 
+     * @var array
      */
     private $periods;
     
     /**
-     * TODO
+     * Constructor.
+     * 
+     * @param array $dataNames @see $this->dataNames
+     * @param string $dataType @see $this->dataType
+     * @param array $sites @see $this->sites
+     * @param array $periods @see $this->periods
+     * @param array $defaultRow @see $this->defaultRow
      */
     public function __construct($dataNames, $dataType, $sites, $periods, $defaultRow = null)
     {
@@ -61,7 +114,11 @@ class Piwik_Archive_DataCollection
     }
     
     /**
-     * TODO
+     * Returns a reference to the data for a specific site & period. If there is
+     * no data for the given site ID & period, it is set to the default row.
+     * 
+     * @param int $idSite
+     * @param string $period eg, '2012-01-01,2012-01-31'
      */
     public function &get($idSite, $period)
     {
@@ -72,22 +129,39 @@ class Piwik_Archive_DataCollection
     }
     
     /**
-     * TODO
+     * Adds a new metadata to the data for specific site & period. If there is no
+     * data for the given site ID & period, it is set to the default row.
+     * 
+     * Note: Site ID and period range string are two special types of metadata. Since
+     * the data stored in this class is indexed by site & period, this metadata is not
+     * stored in individual data rows.
+     * 
+     * @param int $idSite
+     * @param string $period eg, '2012-01-01,2012-01-31'
+     * @param string $name The metadata name.
+     * @param mixed $value The metadata name.
      */
-    public function addKey($idSite, $period, $keyName, $keyValue)
+    public function addMetadata($idSite, $period, $name, $value)
     {
         $row = &$this->get($idSite, $period);
-        $row['_'.$keyName] = $keyValue;
+        $row['_'.$name] = $value;
     }
     
     /**
-     * TODO
+     * Returns archive data as an array indexed by metadata.
+     * 
+     * @param array $resultIndices An array mapping metadata names to pretty labels
+     *                             for them. Each archive data row will be indexed
+     *                             by the metadata specified here.
+     *                             
+     *                             Eg, array('site' => 'idSite', 'period' => 'Date')
+     * @return array
      */
     public function getArray($resultIndices)
     {
         $indexKeys = array_keys($resultIndices);
         
-        $result = $this->initializeIndex($indexKeys);
+        $result = $this->createEmptyIndex($indexKeys);
         foreach ($this->data as $idSite => $rowsByPeriod) {
             foreach ($rowsByPeriod as $period => $row) {
                 $indexRowKeys = $this->getRowKeys($indexKeys, $row, $idSite, $period);
@@ -99,9 +173,17 @@ class Piwik_Archive_DataCollection
     }
     
     /**
-     * TODO
+     * Returns archive data as a DataTable indexed by metadata. Indexed data will
+     * be represented by Piwik_DataTable_Array instances.
+     * 
+     * @param array $resultIndices An array mapping metadata names to pretty labels
+     *                             for them. Each archive data row will be indexed
+     *                             by the metadata specified here.
+     *                             
+     *                             Eg, array('site' => 'idSite', 'period' => 'Date')
+     * @return Piwik_DataTable|Piwik_DataTable_Array
      */
-    public function getDataTable($resultIndices, $expanded = false, $addMetadataSubtableId = false)
+    public function getDataTable($resultIndices)
     {
         $dataTableFactory = new Piwik_Archive_DataTableFactory(
             $this->dataNames, $this->dataType, $this->sites, $this->periods, $this->defaultRow);
@@ -111,7 +193,21 @@ class Piwik_Archive_DataCollection
     }
     
     /**
-     * TODO
+     * Returns archive data as a DataTable indexed by metadata. Indexed data will
+     * be represented by Piwik_DataTable_Array instances. Each DataTable will have
+     * its subtable IDs set.
+     * 
+     * This function will only work if blob data was loaded and only one record
+     * was loaded (not including subtables of the record).
+     * 
+     * @param array $resultIndices An array mapping metadata names to pretty labels
+     *                             for them. Each archive data row will be indexed
+     *                             by the metadata specified here.
+     *                             
+     *                             Eg, array('site' => 'idSite', 'period' => 'Date')
+     * @param int $idSubtable The subtable to return.
+     * @param bool $addMetadataSubtableId Whether to add the DB subtable ID as metadata
+     *                                    to each datatable, or not.
      */
     public function getExpandedDataTable($resultIndices, $idSubtable = null, $addMetadataSubtableId = false)
     {
@@ -135,9 +231,14 @@ class Piwik_Archive_DataCollection
     }
     
     /**
-     * TODO
+     * Creates an empty index using a list of metadata names. If the 'site' and/or
+     * 'period' metadata names are supplied, empty rows are added for every site/period
+     * that was queried for.
+     * 
+     * @param array $indexKeys List of metadata names to index archive data by.
+     * @return array
      */
-    private function initializeIndex($indexKeys)
+    private function createEmptyIndex($indexKeys)
     {
         $result = array();
         
@@ -145,11 +246,11 @@ class Piwik_Archive_DataCollection
             $index = array_shift($indexKeys);
             if ($index == 'site') {
                 foreach ($this->sites as $idSite) {
-                    $result[$idSite] = $this->initializeIndex($indexKeys);
+                    $result[$idSite] = $this->createEmptyIndex($indexKeys);
                 }
             } else if ($index == 'period') {
                 foreach ($this->periods as $period => $periodObject) {
-                    $result[$period] = $this->initializeIndex($indexKeys);
+                    $result[$period] = $this->createEmptyIndex($indexKeys);
                 }
             }
         }
@@ -158,7 +259,7 @@ class Piwik_Archive_DataCollection
     }
     
     /**
-     * TODO
+     * Sets a row in an index by the index keys of the row.
      */
     private function setIndexRow(&$result, $keys, $row)
     {
@@ -175,12 +276,19 @@ class Piwik_Archive_DataCollection
     }
     
     /**
-     * TODO
+     * Returns the index keys for a row based on a set of metadata names.
+     * 
+     * @param array $metadataNames
+     * @param array $row
+     * @param int $idSite The site ID for the row (needed since site ID is not
+     *                    stored as metadata).
+     * @param string $period eg, '2012-01-01,2012-01-31'. The period for the
+     *                       row (needed since period is not stored as metadata).
      */
-    private function getRowKeys($keyNames, $row, $idSite, $period)
+    private function getRowKeys($metadataNames, $row, $idSite, $period)
     {
         $result = array();
-        foreach ($keyNames as $name) {
+        foreach ($metadataNames as $name) {
             if ($name == 'site') {
                 $result['site'] = $idSite;
             } else if ($name == 'period') {
@@ -190,14 +298,5 @@ class Piwik_Archive_DataCollection
             }
         }
         return $result;
-    }
-    
-    /**
-     * TODO
-     */
-    private function getFirstDataRow()
-    {
-        $firstSite = reset($this->data);
-        return reset($firstSite);
     }
 }

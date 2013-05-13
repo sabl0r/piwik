@@ -476,6 +476,8 @@ class Piwik_Archive
      *
      * @param string $name The name of the record to get.
      * @param int|string|null $idSubtable The subtable ID (if any) or 'all' if requesting every datatable.
+     * @param bool $addMetadataSubtableId Whether to add the DB subtable ID as metadata to each datatable,
+     *                                    or not.
      * @return Piwik_DataTable
      */
     public function getDataTableExpanded($name, $idSubtable = null, $addMetadataSubtableId = true)
@@ -674,7 +676,7 @@ class Piwik_Archive
                     $value = $this->formatNumericValue($row['value']);
                 } else {
                     $value = $this->uncompress($row['value']);
-                    $result->addKey($idSite, $periodStr, 'ts_archived', $row['ts_archived']);
+                    $result->addMetadata($idSite, $periodStr, 'ts_archived', $row['ts_archived']);
                 }
                 
                 $resultRow = &$result->get($idSite, $periodStr);
