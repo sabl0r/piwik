@@ -263,7 +263,7 @@ class Piwik_Archive_DataTableFactory
         // Note: $result can be a DataTable_Array
         $result->filter(function ($table) use ($keyMetadata) {
             foreach ($keyMetadata as $name => $value) {
-                $result->setMetadata($name, $value);
+                $table->setMetadata($name, $value);
             }
         });
         

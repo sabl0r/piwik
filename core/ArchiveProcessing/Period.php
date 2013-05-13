@@ -44,13 +44,15 @@ class Piwik_ArchiveProcessing_Period extends Piwik_ArchiveProcessing
      * @param Piwik_Period $period
      */
     public function setPeriod( Piwik_Period $period ) 
-    {if ($period->getLabel() == 'day') debug_print_backtrace(0,10);
+    {
         parent::setPeriod($period);
         $this->archive = null; // make sure archive is recreated
     }
     
     /**
-     * TODO
+     * Sets the segment.
+     * 
+     * @param Piwik_Segment $segment
      */
     public function setSegment( Piwik_Segment $segment) 
     {
@@ -282,9 +284,10 @@ class Piwik_ArchiveProcessing_Period extends Piwik_ArchiveProcessing
     }
 
     /**
-     * Returns the ID of the archived subperiods. TODO: this documentation is inaccurate
+     * Returns an archive instance that can be used to query for data in each
+     * subperiod of the period we're archiving data for.
      * 
-     * @return array  Array of the idArchive of the subperiods
+     * @return Piwik_Archive
      */
     protected function loadSubperiodsArchive()
     {

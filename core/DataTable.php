@@ -369,9 +369,9 @@ class Piwik_DataTable
     /**
      * Apply a filter to this datatable
      *
-     * @param string $className   Class name, eg. "Sort" or "Piwik_DataTable_Filter_Sort"
+     * @param string|Closure $className   Class name, eg. "Sort" or "Piwik_DataTable_Filter_Sort".
+     *                                    If this variable is a closure, it will get executed immediately.
      * @param array $parameters  Array of parameters to the filter, eg. array('nb_visits', 'asc')
-     * TODO modify
      */
     public function filter($className, $parameters = array())
     {
@@ -1498,51 +1498,10 @@ class Piwik_DataTable
     }
     
     /**
-     * TODO
-     * array('idSite', 'date')
-     */
-    public static function createIndexedFromArray( $rows, $metadata, $indices, $createSimpleTable = false )
-    {
-        // if there are no indices left, create a DataTable
-        if (empty($indices)) {
-            if ($rows instanceof Piwik_DataTable) {
-                $result = $rows;
-            } else {
-                if ($createSimpleTable) {
-                    $result = new Piwik_DataTable_Simple();
-                } else {
-                    $result = new Piwik_DataTable();
-                }
-                
-                // TODO: hack? used because Archive::createSimpleGetResult will send one row, not multiple rows, to this function. however, wrapping the row in that function, fails...
-                if (!empty($rows)
-                    && !is_array(reset($rows))
-                ) {
-                    $rows = array($rows);
-                }
-                
-                $result->addRowsFromSimpleArray($rows);
-            }
-            
-            if (is_array($metadata)) {
-                foreach ($metadata as $key => $value) {
-                    $result->setMetadata($key, $value);
-                }
-            }
-        } else { // create a DataTable_Array
-            $result = new Piwik_DataTable_Array();
-            $result->setKeyName(array_shift($indices));
-            
-            foreach ($rows as $key => $childRows) {
-                $table = self::createIndexedFromArray($childRows, $metadata[$key], $indices, $createSimpleTable);
-                $result->addTable($table, $key);
-            }
-        }
-        return $result;
-    }
-    
-    /**
-     * TODO
+     * Creates a new DataTable instance from a blob string.
+     * 
+     * @param string $blob
+     * @return Piwik_DataTable
      */
     public static function fromBlob($blob)
     {
