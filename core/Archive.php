@@ -8,13 +8,15 @@
  * @category Piwik
  * @package Piwik
  */
+
 /**
-// TODO: for getDataTableNumeric, this means one row per site/period. is this correct? Will this be the case for every get... method? Need to make this clear somewhere, piwik docs don't mention anything about this.
-// TODO: create ticket for this: when building archives, should use each site's timezone (ONLY FOR 'now'). 
-*/
-/** TODO: limitations: can only query for one range period at a time. can query for multiple periods, but they must be the same type of period.
  * The archive object is used to query specific data for a day or a period of statistics for a given website.
  *
+ * Limitations:
+ * - If you query w/ a range period, you can only query for ONE at a time.
+ * - If you query w/ a non-range period, you can query for multiple periods, but they must
+ *   all be of the same type (ie, day, week, month, year).
+ * 
  * Example:
  * <pre>
  *        $archive = Piwik_Archive::build($idSite = 1, $period = 'week', '2008-03-08');
@@ -31,7 +33,9 @@
  * </pre>
  *
  * If the requested statistics are not yet processed, Archive uses ArchiveProcessing to archive the statistics.
- *
+ * 
+ * TODO: create ticket for this: when building archives, should use each site's timezone (ONLY FOR 'now'). 
+ * 
  * @package Piwik
  * @subpackage Piwik_Archive
  */
@@ -296,6 +300,7 @@ class Piwik_Archive
         $this->siteIds = null;
         $this->segment = null;
         $this->idarchives = array();
+        $this->processingCache = array();
     }
 
     /**
@@ -432,6 +437,8 @@ class Piwik_Archive
     /**
      * Returns the numeric values of the elements in $names as a DataTable.
      * 
+     * Note: Every DataTable instance returned will have at most one row in it.
+     * 
      * @param string|array $names One or more archive names, eg, 'nb_visits', 'Referers_distinctKeywords',
      *                            etc.
      * @return Piwik_DataTable|false False if no value with the given names. Based on the number
@@ -475,6 +482,131 @@ class Piwik_Archive
     {
         $data = $this->get($name, 'blob', 'all');
         return $data->getExpandedDataTable($this->getResultIndices(), $idSubtable, $addMetadataSubtableId);
+    }
+    
+    /**
+     * Returns true if we shouldn't launch the archiving process and false if we should.
+     * 
+     * @return bool
+     */
+    public function isArchivingDisabled()
+    {
+        return Piwik_ArchiveProcessing::isArchivingDisabledFor($this->segment, $this->getPeriodLabel());
+    }
+
+    /**
+     * Returns true if Segmentation is allowed for this user
+     *
+     * @return bool
+     */
+    public static function isSegmentationEnabled()
+    {
+        return !Piwik::isUserIsAnonymous()
+            || Piwik_Config::getInstance()->General['anonymous_user_enable_use_segments_API'];
+    }
+
+    /**
+     * Indicate if $dateString and $period correspond to multiple periods
+     *
+     * @static
+     * @param  $dateString
+     * @param  $period
+     * @return boolean
+     */
+    public static function isMultiplePeriod($dateString, $period)
+    {
+        return (preg_match('/^(last|previous){1}([0-9]*)$/D', $dateString, $regs)
+            || Piwik_Period_Range::parseDateRange($dateString))
+            && $period != 'range';
+    }
+
+    /**
+     * Indicate if $idSiteString corresponds to multiple sites.
+     *
+     * @param string $idSiteString
+     * @return bool
+     */
+    public static function isMultipleSites($idSiteString)
+    {
+        return $idSiteString == 'all' || strpos($idSiteString, ',') !== false;
+    }
+    
+    /**
+     * Returns the report names for a list of metric/record names.
+     * 
+     * @see getRequestedReport
+     * 
+     * @param array $archiveNames
+     */
+    public function getRequestedReports($archiveNames)
+    {
+        $result = array();
+        foreach ($archiveNames as $name) {
+            $result[] = self::getRequestedReport($name);
+        }
+        return array_unique($result);
+    }
+    
+    /**
+     * Returns the report name for a metric/record name.
+     * 
+     * A report name has the following format: {$pluginName}_{$reportId}, eg. VisitFrequency_Metrics.
+     * The report ID is not used anywhere in Piwik.
+     */
+    public static function getRequestedReport($archiveName)
+    {
+        // Core metrics are always processed in Core, for the requested date/period/segment
+        if (in_array($archiveName, Piwik_ArchiveProcessing::getCoreMetrics())
+            || $archiveName == 'max_actions'
+        ) {
+            return 'VisitsSummary_CoreMetrics';
+        }
+        // VisitFrequency metrics don't follow the same naming convention (HACK) 
+        else if(strpos($archiveName, '_returning') > 0
+            // ignore Goal_visitor_returning_1_1_nb_conversions 
+            && strpos($archiveName, 'Goal_') === false
+        ) {
+            return 'VisitFrequency_Metrics';
+        }
+        // Goal_* metrics are processed by the Goals plugin (HACK)
+        else if(strpos($archiveName, 'Goal_') === 0) {
+            return 'Goals_Metrics';
+        } else {
+            return $archiveName;
+        }
+    }
+    
+    /**
+     * Helper - Loads a DataTable from the Archive.
+     * Optionally loads the table recursively,
+     * or optionally fetches a given subtable with $idSubtable
+     *
+     * @param string $name
+     * @param int $idSite
+     * @param string $period
+     * @param Piwik_Date $date
+     * @param string $segment
+     * @param bool $expanded
+     * @param null $idSubtable
+     * @return Piwik_DataTable|Piwik_DataTable_Array
+     */
+    public static function getDataTableFromArchive($name, $idSite, $period, $date, $segment, $expanded, $idSubtable = null)
+    {
+        Piwik::checkUserHasViewAccess($idSite);
+        $archive = Piwik_Archive::build($idSite, $period, $date, $segment);
+        if ($idSubtable === false) {
+            $idSubtable = null;
+        }
+
+        if ($expanded) {
+            $dataTable = $archive->getDataTableExpanded($name, $idSubtable);
+        } else {
+            $dataTable = $archive->getDataTable($name, $idSubtable);
+        }
+
+        $dataTable->queueFilter('ReplaceSummaryRowLabel');
+
+        return $dataTable;
     }
     
     /**
@@ -539,7 +671,7 @@ class Piwik_Archive
                 $periodStr = $row['date1'].",".$row['date2'];
                 
                 if ($archiveTableType == 'archive_numeric') {
-                    $value = (float)$row['value'];
+                    $value = $this->formatNumericValue($row['value']);
                 } else {
                     $value = $this->uncompress($row['value']);
                     $result->addKey($idSite, $periodStr, 'ts_archived', $row['ts_archived']);
@@ -606,7 +738,11 @@ class Piwik_Archive
     }
     
     /**
-     * TODO
+     * Gets the IDs of the archives we're querying for and stores them in $this->archives.
+     * This function will launch the archiving process for each period/site/plugin if 
+     * metrics/reports have not been calculated/archived already.
+     * 
+     * @param array $requestedReports @see getRequestedReport
      */
     private function cacheArchiveIdsAfterLaunching($requestedReports)
     {
@@ -670,19 +806,11 @@ class Piwik_Archive
     }
     
     /**
-     * TODO
-     */
-    private function getArchiveProcessingInstance($period)
-    {
-        $label = $period->getLabel();
-        if (!isset($this->processingCache[$label])) {
-            $this->processingCache[$label] = Piwik_ArchiveProcessing::factory($label);
-        }
-        return $this->processingCache[$label];
-    }
-    
-    /**
-     * TODO
+     * Gets the IDs of the archives we're querying for and stores them in $this->archives.
+     * This function will not launch the archiving process (and is thus much, much faster
+     * than cacheArchiveIdsAfterLaunching).
+     * 
+     * @param array $requestedReports @see getRequestedReport
      */
     private function cacheArchiveIdsWithoutLaunching($requestedReports)
     {
@@ -731,7 +859,11 @@ class Piwik_Archive
     }
     
     /**
-     * TODO
+     * Returns the SQL condition used to find successfully completed archives that
+     * this instance is querying for.
+     * 
+     * @param array $requestedReports @see getRequestedReport
+     * @return string
      */
     private function getNameCondition($requestedReports)
     {
@@ -756,7 +888,28 @@ class Piwik_Archive
     }
     
     /**
-     * TODO
+     * Returns an ArchiveProcessing instance that should be used for a specific
+     * period.
+     * 
+     * @param Piwik_Period $period
+     */
+    private function getArchiveProcessingInstance($period)
+    {
+        $label = $period->getLabel();
+        if (!isset($this->processingCache[$label])) {
+            $this->processingCache[$label] = Piwik_ArchiveProcessing::factory($label);
+        }
+        return $this->processingCache[$label];
+    }
+    
+    /**
+     * Returns the periods of the archives this instance is querying for grouped by
+     * by year & month.
+     * 
+     * @return array The result will be an array of Piwik_Period instances, where each
+     *               instance is associated w/ a string describing the year and month,
+     *               eg, 2012_01. The format is the same format used in archive database
+     *               table names.
      */
     private function getPeriodsByTableMonth()
     {
@@ -768,16 +921,17 @@ class Piwik_Archive
         return $result;
     }
     
-    /**
-     * TODO
-     */
     private function getPeriodLabel()
     {
         return reset($this->periods)->getLabel();
     }
     
     /**
-     * TODO
+     * Returns the table & month that an archive for a specific date range is stored
+     * in.
+     * 
+     * @param string $dateRange eg, "2012-01-01,2012-01-02"
+     * @return string eg, "2012_01"
      */
     private function getTableMonthFromDateRange($dateRange)
     {
@@ -785,45 +939,10 @@ class Piwik_Archive
     }
     
     /**
-     * TODO
-     */
-    public function getRequestedReports($archiveNames)
-    {
-        $result = array();
-        foreach ($archiveNames as $name) {
-            $result[] = self::getRequestedReport($name);
-        }
-        return array_unique($result);
-    }
-    
-    /**
-     * TODO
-     */
-    public static function getRequestedReport($archiveName)
-    {
-        // Core metrics are always processed in Core, for the requested date/period/segment
-        if (in_array($archiveName, Piwik_ArchiveProcessing::getCoreMetrics())
-            || $archiveName == 'max_actions'
-        ) {
-            return 'VisitsSummary_CoreMetrics';
-        }
-        // VisitFrequency metrics don't follow the same naming convention (HACK) 
-        else if(strpos($archiveName, '_returning') > 0
-            // ignore Goal_visitor_returning_1_1_nb_conversions 
-            && strpos($archiveName, 'Goal_') === false
-        ) {
-            return 'VisitFrequency_Metrics';
-        }
-        // Goal_* metrics are processed by the Goals plugin (HACK)
-        else if(strpos($archiveName, 'Goal_') === 0) {
-            return 'Goals_Metrics';
-        } else {
-            return $archiveName;
-        }
-    }
-    
-    /**
-     * TODO
+     * Returns an array describing what metadata to use when indexing a query result.
+     * For use with Piwik_Archive_DataCollection.
+     * 
+     * @return array
      */
     private function getResultIndices()
     {
@@ -843,41 +962,8 @@ class Piwik_Archive
         
         return $indices;
     }
-    
-    /**
-     * Helper - Loads a DataTable from the Archive.
-     * Optionally loads the table recursively,
-     * or optionally fetches a given subtable with $idSubtable
-     *
-     * @param string $name
-     * @param int $idSite
-     * @param string $period
-     * @param Piwik_Date $date
-     * @param string $segment
-     * @param bool $expanded
-     * @param null $idSubtable
-     * @return Piwik_DataTable|Piwik_DataTable_Array
-     */
-    public static function getDataTableFromArchive($name, $idSite, $period, $date, $segment, $expanded, $idSubtable = null)
-    {
-        Piwik::checkUserHasViewAccess($idSite);
-        $archive = Piwik_Archive::build($idSite, $period, $date, $segment);
-        if ($idSubtable === false) {
-            $idSubtable = null;
-        }
 
-        if ($expanded) {
-            $dataTable = $archive->getDataTableExpanded($name, $idSubtable);
-        } else {
-            $dataTable = $archive->getDataTable($name, $idSubtable);
-        }
-
-        $dataTable->queueFilter('ReplaceSummaryRowLabel');
-
-        return $dataTable;
-    }
-
-    protected function formatNumericValue($value)
+    private function formatNumericValue($value)
     {
         // If there is no dot, we return as is
         // Note: this could be an integer bigger than 32 bits
@@ -890,53 +976,7 @@ class Piwik_Archive
 
         // Round up the value with 2 decimals
         // we cast the result as float because returns false when no visitors
-        $value = round((float)$value, 2);
-        return $value;
-    }
-
-    /**
-     * Returns true if Segmentation is allowed for this user
-     *
-     * @return bool
-     */
-    public static function isSegmentationEnabled()
-    {
-        return !Piwik::isUserIsAnonymous()
-            || Piwik_Config::getInstance()->General['anonymous_user_enable_use_segments_API'];
-    }
-
-    /**
-     * Indicate if $dateString and $period correspond to multiple periods
-     *
-     * @static
-     * @param  $dateString
-     * @param  $period
-     * @return boolean
-     */
-    public static function isMultiplePeriod($dateString, $period)
-    {
-        return (preg_match('/^(last|previous){1}([0-9]*)$/D', $dateString, $regs)
-            || Piwik_Period_Range::parseDateRange($dateString))
-            && $period != 'range';
-    }
-
-    /**
-     * Indicate if $idSiteString corresponds to multiple sites.
-     *
-     * @param string $idSiteString
-     * @return bool
-     */
-    public static function isMultipleSites($idSiteString)
-    {
-        return $idSiteString == 'all' || strpos($idSiteString, ',') !== false;
-    }
-    
-    /**
-     * TODO
-     */
-    public function isArchivingDisabled()
-    {
-        return Piwik_ArchiveProcessing::isArchivingDisabledFor($this->segment, $this->getPeriodLabel());
+        return round((float)$value, 2);
     }
     
     private function getArchiveDescriptor($idSite, $period)
