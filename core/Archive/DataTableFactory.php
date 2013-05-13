@@ -256,10 +256,10 @@ class Piwik_Archive_DataTableFactory
      */
     private function transformMetadata($table)
     {
-        $self = $this;
-        $table->filter(function ($table) use($self) {
+        $periods = $this->periods;
+        $table->filter(function ($table) use($periods) {
             $table->metadata['site'] = new Piwik_Site($table->metadata['site']);
-            $table->metadata['period'] = $self->periods[$table->metadata['period']];
+            $table->metadata['period'] = $periods[$table->metadata['period']];
         });
     }
     

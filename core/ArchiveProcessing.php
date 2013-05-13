@@ -585,26 +585,6 @@ abstract class Piwik_ArchiveProcessing
     }
 
     /**
-     * Returns the name of the numeric table where the archive numeric values are stored
-     *TODO: remove this and below?
-     * @return string
-     */
-    public function getTableArchiveNumericName()
-    {
-        return $this->tableArchiveNumeric->getTableName();
-    }
-
-    /**
-     * Returns the name of the blob table where the archive blob values are stored
-     *
-     * @return string
-     */
-    public function getTableArchiveBlobName()
-    {
-        return $this->tableArchiveBlob->getTableName();
-    }
-
-    /**
      * Set the period
      *
      * @param Piwik_Period $period

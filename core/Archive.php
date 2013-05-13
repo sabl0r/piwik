@@ -615,7 +615,7 @@ class Piwik_Archive
         // for every individual query permutation, launch the archiving process and get the archive ID
         foreach ($this->getPeriodsByTableMonth() as $tableMonth => $periods) {
             foreach ($this->siteIds as $idSite) {
-                $site = new Piwik_Site($idSite); // TODO: don't need to create a Site instance
+                $site = new Piwik_Site($idSite);
 
                 foreach ($periods as $period) {
                     $periodStr = $period->getRangeString();
