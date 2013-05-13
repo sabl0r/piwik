@@ -10,52 +10,64 @@
  */
 
 /**
- * TODO
+ * Creates a Piwik_DataTable or Piwik_DataTable_Array instance based on an array
+ * index created by Piwik_Archive_DataCollection.
+ * 
+ * This class is only used by Piwik_Archive_DataCollection.
  */
 class Piwik_Archive_DataTableFactory
 {
     /**
-     * TODO
+     * @see Piwik_Archive_DataCollection::$dataNames.
      */
     private $dataNames;
     
     /**
-     * TODO
+     * @see Piwik_Archive_DataCollection::$dataType.
      */
     private $dataType;
     
     /**
-     * TODO
+     * Whether to expand the DataTables that're created or not. Expanding a DataTable
+     * means creating DataTables using subtable blobs and correctly setting the subtable
+     * IDs of all DataTables.
+     * 
+     * @var bool
      */
     private $expandDataTable = false;
     
     /**
-     * TODO
+     * Whether to add the subtable ID used in the database to the in-memory DataTables
+     * as metadata or not.
+     * 
+     * @var bool
      */
     private $addMetadataSubtableId = false;
     
     /**
-     * TODO
+     * @see Piwik_Archive_DataCollection::$sites.
      */
     private $sites;
     
     /**
-     * TODO
+     * @see Piwik_Archive_DataCollection::$periods.
      */
     private $periods;
     
     /**
-     * TODO
+     * The ID of the subtable to create a DataTable for. Only relevant for blob data.
+     * 
+     * @var int|null
      */
     private $idSubtable = null;
     
     /**
-     * TODO
+     * @see Piwik_Archive_DataCollection::$defaultRow.
      */
     private $defaultRow;
     
     /**
-     * TODO
+     * Constructor.
      */
     public function __construct($dataNames, $dataType, $sites, $periods, $defaultRow)
     {
@@ -67,7 +79,12 @@ class Piwik_Archive_DataTableFactory
     }
     
     /**
-     * TODO
+     * Tells the factory instance to expand the DataTables that are created by
+     * creating subtables and setting the subtable IDs of rows w/ subtables correctly.
+     * 
+     * @param bool $addMetadataSubtableId Whether to add the subtable ID used in the
+     *                                    database to the in-memory DataTables as
+     *                                    metadata or not.
      */
     public function expandDataTable($addMetadataSubtableId = false)
     {
@@ -76,7 +93,10 @@ class Piwik_Archive_DataTableFactory
     }
     
     /**
-     * TODO
+     * Tells the factory instance to create a DataTable using a blob with the
+     * supplied subtable ID.
+     * 
+     * @param int $idSubtable An in-database subtable ID.
      */
     public function useSubtable($idSubtable)
     {
@@ -84,11 +104,19 @@ class Piwik_Archive_DataTableFactory
     }
     
     /**
-     * TODO
+     * Creates a Piwik_DataTable|Piwik_DataTable_Array instance using an index of
+     * archive data.
+     * 
+     * @param array $index @see Piwik_Archive_DataCollection
+     * @param array $resultIndices an array mapping metadata names with pretty metadata
+     *                             labels.
+     * @return Piwik_DataTable|Piwik_DataTable_Array
      */
     public function make($index, $resultIndices)
     {
         if (empty($resultIndices)) {
+            // for numeric data, if there's no index (and thus only 1 site & period in the query),
+            // we want to display every queried metric name
             if (empty($index)
                 && $this->dataType == 'numeric'
             ) {
@@ -105,9 +133,20 @@ class Piwik_Archive_DataTableFactory
     }
 
     /**
-     * TODO
+     * Creates a Piwik_DataTable|Piwik_DataTable_Array instance using an array
+     * of blobs.
+     * 
+     * If only one record is being queried, a single DataTable will
+     * be returned. Otherwise, a DataTable_Array is returned that indexes
+     * DataTables by record name.
+     * 
+     * If expandDataTable was called, and only one record is being queried,
+     * the created DataTable's subtables will be expanded.
+     * 
+     * @param array $blobRow
+     * @return Piwik_DataTable|Piwik_DataTable_Array
      */
-    public function makeFromBlobRow($blobRow)
+    private function makeFromBlobRow($blobRow)
     {
         if ($blobRow === false) {
             return new Piwik_DataTable();
@@ -152,7 +191,11 @@ class Piwik_Archive_DataTableFactory
     }
     
     /**
-     * TODO
+     * Creates a Piwik_DataTable_Array from an array index.
+     * 
+     * @param array $index @see Piwik_Archive_DataCollection
+     * @param array $resultIndices @see make
+     * @param array $keyMetadata The metadata to add to the table when it's created.
      */
     private function createDataTableArrayFromIndex($index, $resultIndices, $keyMetadata = array())
     {
@@ -180,7 +223,11 @@ class Piwik_Archive_DataTableFactory
     }
     
     /**
-     * TODO
+     * Creates a Piwik_DataTable instance from an index row.
+     * 
+     * @param array|false $data An archive data row.
+     * @param array $keyMetadata The metadata to add to the table(s) when created.
+     * @return Piwik_DataTable|Piwik_DataTable_Array
      */
     private function createDataTable($data, $keyMetadata)
     {
@@ -192,8 +239,8 @@ class Piwik_Archive_DataTableFactory
             if (!empty($data)) {
                 $row = new Piwik_DataTable_Row();
                 foreach ($data as $name => $value) {
-                    if (substr($name, 0, 1) == '_') {
-                        $table->setMetadata(substr($name, 1), $value);
+                    if (Piwik_Archive_DataCollection::isMetadataName($name)) {
+                        $table->setMetadata(Piwik_Archive_DataCollection::getRealMetadataName($name), $value);
                     } else {
                         $row->setColumn($name, $value);
                     }
@@ -213,15 +260,24 @@ class Piwik_Archive_DataTableFactory
             $keyMetadata['period'] = key($this->periods);
         }
         
-        foreach ($keyMetadata as $name => $value) {
-            $result->setMetadata($name, $value);
-        }
+        // Note: $result can be a DataTable_Array
+        $result->filter(function ($table) use ($keyMetadata) {
+            foreach ($keyMetadata as $name => $value) {
+                $result->setMetadata($name, $value);
+            }
+        });
         
         return $result;
     }
     
     /**
-     * TODO
+     * Creates DataTables from $dataTable's subtable blobs (stored in $blobRow) and sets
+     * the subtable IDs of each DataTable row.
+     * 
+     * @param Piwik_DataTable $dataTable
+     * @param array $blobRow An array associating record names (w/ subtable if applicable)
+     *                       with blob values. This should hold every subtable blob for
+     *                       the loaded DataTable.
      */
     private function setSubtables($dataTable, $blobRow)
     {
@@ -252,7 +308,8 @@ class Piwik_Archive_DataTableFactory
     }
     
     /**
-     * TODO
+     * Converts site IDs and period string ranges into Piwik_Site instances and
+     * Piwik_Period instances in DataTable metadata.
      */
     private function transformMetadata($table)
     {
@@ -264,7 +321,11 @@ class Piwik_Archive_DataTableFactory
     }
     
     /**
-     * TODO
+     * Returns the pretty version of an index label.
+     * 
+     * @param string $labelType eg, 'site', 'period', etc.
+     * @param string $label eg, '0', '1', '2012-01-01,2012-01-31', etc.
+     * @return string
      */
     private function prettifyIndexLabel($labelType, $label)
     {

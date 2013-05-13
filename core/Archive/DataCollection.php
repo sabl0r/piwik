@@ -231,6 +231,31 @@ class Piwik_Archive_DataCollection
     }
     
     /**
+     * Returns true if $name is a metadata name or not.
+     * 
+     * Metadata is stored in archive data rows w/ underscores prepended to the actual
+     * metadata name.
+     * 
+     * @param string $name
+     * @return bool
+     */
+    public static function isMetadataName($name)
+    {
+        return substr($name, 0, 1) == '_';
+    }
+    
+    /**
+     * Returns the real metadata name for an archive data metadata name.
+     * 
+     * @param string $name
+     * @return string
+     */
+    public static function getRealMetadataName($name)
+    {
+        return substr($name, 1);
+    }
+    
+    /**
      * Creates an empty index using a list of metadata names. If the 'site' and/or
      * 'period' metadata names are supplied, empty rows are added for every site/period
      * that was queried for.
