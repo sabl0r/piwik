@@ -112,7 +112,10 @@ class Piwik_TablePartitioning_Monthly extends Piwik_TablePartitioning
     public static $numericArchiveTable = null;
     
     /**
-     * TODO
+     * Creates archive_blob & archive_numeric tables for a period if they don't
+     * already exist.
+     * 
+     * @param Piwik_Period $periodInMonth
      */
     public static function createArchiveTablesIfAbsent($periodInMonth)
     {
