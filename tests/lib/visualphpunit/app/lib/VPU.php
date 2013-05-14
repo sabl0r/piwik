@@ -159,7 +159,7 @@ class VPU {
             } elseif ( $char == '{' ) {
                 $j = $i + 1;
                 while ($str{$j} === ' ' || $str{$j} === "\n" || $str{$j} === "\t") ++$j;
-                
+
                 // Ensure we're only adding events to the array
                 if ( $nest == 0 && substr($str, $j, 7) != '"event"' ) {
                     continue;
