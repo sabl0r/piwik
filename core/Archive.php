@@ -749,26 +749,30 @@ class Piwik_Archive
     private function cacheArchiveIdsAfterLaunching($requestedReports)
     {
         $today = Piwik_Date::today();
+        $pluginsOfReports = $this->getPluginsOfReports($requestedReports);
         
         // for every individual query permutation, launch the archiving process and get the archive ID
         foreach ($this->getPeriodsByTableMonth() as $tableMonth => $periods) {
-            foreach ($this->siteIds as $idSite) {
-                $site = new Piwik_Site($idSite);
-
-                foreach ($periods as $period) {
-                    $periodStr = $period->getRangeString();
+            foreach ($periods as $period) {
+                $periodStr = $period->getRangeString();
+                
+                $twoDaysBeforePeriod = $period->getDateStart()->subDay(2);
+                $twoDaysAfterPeriod = $period->getDateEnd()->addDay(2);
+                
+                foreach ($this->siteIds as $idSite) {
+                    $site = new Piwik_Site($idSite);
                     
                     // if the END of the period is BEFORE the website creation date
                     // we already know there are no stats for this period
                     // we add one day to make sure we don't miss the day of the website creation
-                    if ($period->getDateEnd()->addDay(2)->isEarlier($site->getCreationDate())) {
+                    if ($twoDaysAfterPeriod->isEarlier($site->getCreationDate())) {
                         $archiveDesc = $this->getArchiveDescriptor($idSite, $period);
                         Piwik::log("Archive $archiveDesc skipped, archive is before the website was created.");
                         continue;
                     }
             
                     // if the starting date is in the future we know there is no visit
-                    if ($period->getDateStart()->subDay(2)->isLater($today)) {
+                    if ($twoDaysBeforePeriod->isLater($today)) {
                         $archiveDesc = $this->getArchiveDescriptor($idSite, $period);
                         Piwik::log("Archive $archiveDesc skipped, archive is after today.");
                         continue;
@@ -783,9 +787,9 @@ class Piwik_Archive
                     $processing->isThereSomeVisits = null;
                     
                     // process for each requested report as well
-                    foreach ($requestedReports as $report) {
+                    foreach ($pluginsOfReports as $plugin) {
                         $processing->init();
-                        $processing->setRequestedReport($report);
+                        $processing->setRequestedReport($plugin.'_reportsAndMetrics');
                         
                         // launch archiving if the requested data hasn't been archived
                         $idArchive = $processing->loadArchive();
@@ -1002,5 +1006,15 @@ class Piwik_Archive
         }
         
         return $array;
+    }
+    
+    private function getPluginsOfReports($reports)
+    {
+        $plugins = array();
+        foreach ($reports as $report) {
+            $parts = explode('_', $report);
+            $plugins[] = $parts[0];
+        }
+        return $plugins;
     }
 }
