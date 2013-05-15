@@ -325,7 +325,7 @@ class Piwik_Archive
         ) {
             $forceIndexedBySite = true;
         }
-        $sites = Piwik_Site::getIdSitesFromIdSitesString($idSite);
+        $sites = Piwik_Site::getIdSitesFromIdSitesString($idSite, $_restrictSitesToLogin);
         
         // if a period date string is detected: either 'last30', 'previous10' or 'YYYY-MM-DD,YYYY-MM-DD'
         if (is_string($strDate)
