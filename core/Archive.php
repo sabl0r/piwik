@@ -788,8 +788,10 @@ class Piwik_Archive
                     
                     // process for each requested report as well
                     foreach ($pluginsOfReports as $plugin) {
+                        $report = $plugin.'_reportsAndMetrics';
+                        
                         $processing->init();
-                        $processing->setRequestedReport($plugin.'_reportsAndMetrics');
+                        $processing->setRequestedReport($report);
                         
                         // launch archiving if the requested data hasn't been archived
                         $idArchive = $processing->loadArchive();
