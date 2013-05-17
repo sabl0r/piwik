@@ -700,25 +700,25 @@ class Piwik_Archive
         // figure out which archives haven't been processed (if an archive has been processed,
         // then we have the archive IDs in $this->idarchives)
         $doneFlags = array();
-        $pluginsToArchive = array();
+        $archiveGroups = array();
         foreach ($requestedReports as $report) {
             $doneFlag = Piwik_ArchiveProcessing::getDoneStringFlagFor(
                 $this->segment, $this->getPeriodLabel(), $report);
             
             $doneFlags[$doneFlag] = true;
             if (!isset($this->idarchives[$doneFlag])) {
-                $pluginsToArchive[] = $this->getPluginOfReport($report);
+                $archiveGroups[] = $this->getArchiveGroupOfReport($report);
             }
         }
         
-        $pluginsToArchive = array_unique($pluginsToArchive);
+        $archiveGroups = array_unique($archiveGroups);
         
         // cache id archives for plugins we haven't processed yet
-        if (!empty($pluginsToArchive)) {
+        if (!empty($archiveGroups)) {
             if (!$this->isArchivingDisabled()) {
-                $this->cacheArchiveIdsAfterLaunching($pluginsToArchive);
+                $this->cacheArchiveIdsAfterLaunching($archiveGroups, $requestedReports);
             } else {
-                $this->cacheArchiveIdsWithoutLaunching($pluginsToArchive);
+                $this->cacheArchiveIdsWithoutLaunching($requestedReports);
             }
         }
         
@@ -748,7 +748,7 @@ class Piwik_Archive
      * 
      * @param array $requestedReports @see getRequestedReport
      */
-    private function cacheArchiveIdsAfterLaunching($pluginsOfReports)
+    private function cacheArchiveIdsAfterLaunching($archiveGroups, $requestedReports)
     {
         $today = Piwik_Date::today();
         
@@ -788,8 +788,11 @@ class Piwik_Archive
                     $processing->isThereSomeVisits = null;
                     
                     // process for each requested report as well
-                    foreach ($pluginsOfReports as $plugin) {
-                        $report = $plugin.'_reportsAndMetrics';
+                    foreach ($archiveGroups as $pluginOrAll) {
+                        if ($pluginOrAll == 'all') {
+                            $pluginOrAll = $this->getPluginForReport(reset($requestedReports));
+                        }
+                        $report = $pluginOrAll.'_reportsAndMetrics';
                         
                         $processing->init();
                         $processing->setRequestedReport($report);
@@ -821,7 +824,7 @@ class Piwik_Archive
      * 
      * @param array $requestedReports @see getRequestedReport
      */
-    private function cacheArchiveIdsWithoutLaunching($pluginsToArchive) // TODO: change docs everywhere requestedreport is used
+    private function cacheArchiveIdsWithoutLaunching($requestedReports) // TODO: change docs everywhere requestedreport is not used
     {
         $periodType = $this->getPeriodLabel();
         
@@ -829,7 +832,7 @@ class Piwik_Archive
                                FROM %s
                               WHERE period = ?
                                 AND %s
-                                AND ".$this->getNameCondition($pluginsToArchive)."
+                                AND ".$this->getNameCondition($requestedReports)."
                                 AND idsite IN (".implode(',', $this->siteIds).")
                            GROUP BY idsite, date1, date2";
         
@@ -874,15 +877,13 @@ class Piwik_Archive
      * @param array $requestedReports @see getRequestedReport
      * @return string
      */
-    private function getNameCondition($plugins)
+    private function getNameCondition($requestedReports)
     {
         // the flags used to tell how the archiving process for a specific archive was completed,
         // if it was completed
         $doneFlags = array();
         $periodType = $this->getPeriodLabel();
-        foreach ($plugins as $pluginName) {
-            $report = $pluginName.'_reportsAndMetrics';
-            
+        foreach ($requestedReports as $report) {
             $done = Piwik_ArchiveProcessing::getDoneStringFlagFor($this->segment, $periodType, $report);
             $donePlugins = Piwik_ArchiveProcessing::getDoneStringFlagFor($this->segment, $periodType, $report, true);
             
@@ -1013,16 +1014,16 @@ class Piwik_Archive
         return $array;
     }
     
-    private function getPluginsOfReports($reports)
+    private function getArchiveGroupOfReport($report)
     {
-        $plugins = array();
-        foreach ($reports as $report) {
-            $plugins[] = $this->getPluginOfReport($report);
+        if ($this->getPeriodLabel() != 'range') {
+            return 'all';
         }
-        return array_unique($plugins);
+        
+        return $this->getPluginForReport($report);
     }
     
-    private function getPluginOfReport($report)
+    private function getPluginForReport($report)
     {
         $parts = explode('_', $report);
         return $parts[0];
