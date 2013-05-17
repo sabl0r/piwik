@@ -1017,6 +1017,6 @@ class Piwik_Archive
             $parts = explode('_', $report);
             $plugins[] = $parts[0];
         }
-        return $plugins;
+        return array_unique($plugins);
     }
 }
