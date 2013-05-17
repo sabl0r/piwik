@@ -700,23 +700,25 @@ class Piwik_Archive
         // figure out which archives haven't been processed (if an archive has been processed,
         // then we have the archive IDs in $this->idarchives)
         $doneFlags = array();
-        $reportsToArchive = array();
+        $pluginsToArchive = array();
         foreach ($requestedReports as $report) {
             $doneFlag = Piwik_ArchiveProcessing::getDoneStringFlagFor(
                 $this->segment, $this->getPeriodLabel(), $report);
             
             $doneFlags[$doneFlag] = true;
             if (!isset($this->idarchives[$doneFlag])) {
-                $reportsToArchive[] = $report;
+                $pluginsToArchive[] = $this->getPluginOfReport($report);
             }
         }
         
+        $pluginsToArchive = array_unique($pluginsToArchive);
+        
         // cache id archives for plugins we haven't processed yet
-        if (!empty($reportsToArchive)) {
+        if (!empty($pluginsToArchive)) {
             if (!$this->isArchivingDisabled()) {
-                $this->cacheArchiveIdsAfterLaunching($reportsToArchive);
+                $this->cacheArchiveIdsAfterLaunching($pluginsToArchive);
             } else {
-                $this->cacheArchiveIdsWithoutLaunching($reportsToArchive);
+                $this->cacheArchiveIdsWithoutLaunching($pluginsToArchive);
             }
         }
         
@@ -746,10 +748,9 @@ class Piwik_Archive
      * 
      * @param array $requestedReports @see getRequestedReport
      */
-    private function cacheArchiveIdsAfterLaunching($requestedReports)
+    private function cacheArchiveIdsAfterLaunching($pluginsOfReports)
     {
         $today = Piwik_Date::today();
-        $pluginsOfReports = $this->getPluginsOfReports($requestedReports);
         
         // for every individual query permutation, launch the archiving process and get the archive ID
         foreach ($this->getPeriodsByTableMonth() as $tableMonth => $periods) {
@@ -820,7 +821,7 @@ class Piwik_Archive
      * 
      * @param array $requestedReports @see getRequestedReport
      */
-    private function cacheArchiveIdsWithoutLaunching($requestedReports)
+    private function cacheArchiveIdsWithoutLaunching($pluginsToArchive) // TODO: change docs everywhere requestedreport is used
     {
         $periodType = $this->getPeriodLabel();
         
@@ -828,7 +829,7 @@ class Piwik_Archive
                                FROM %s
                               WHERE period = ?
                                 AND %s
-                                AND ".$this->getNameCondition($requestedReports)."
+                                AND ".$this->getNameCondition($pluginsToArchive)."
                                 AND idsite IN (".implode(',', $this->siteIds).")
                            GROUP BY idsite, date1, date2";
         
@@ -873,15 +874,17 @@ class Piwik_Archive
      * @param array $requestedReports @see getRequestedReport
      * @return string
      */
-    private function getNameCondition($requestedReports)
+    private function getNameCondition($plugins)
     {
         // the flags used to tell how the archiving process for a specific archive was completed,
         // if it was completed
         $doneFlags = array();
         $periodType = $this->getPeriodLabel();
-        foreach ($requestedReports as $name) {
-            $done = Piwik_ArchiveProcessing::getDoneStringFlagFor($this->segment, $periodType, $name);
-            $donePlugins = Piwik_ArchiveProcessing::getDoneStringFlagFor($this->segment, $periodType, $name, true);
+        foreach ($plugins as $pluginName) {
+            $report = $pluginName.'_reportsAndMetrics';
+            
+            $done = Piwik_ArchiveProcessing::getDoneStringFlagFor($this->segment, $periodType, $report);
+            $donePlugins = Piwik_ArchiveProcessing::getDoneStringFlagFor($this->segment, $periodType, $report, true);
             
             $doneFlags[$done] = $done;
             $doneFlags[$donePlugins] = $donePlugins;
@@ -1014,9 +1017,14 @@ class Piwik_Archive
     {
         $plugins = array();
         foreach ($reports as $report) {
-            $parts = explode('_', $report);
-            $plugins[] = $parts[0];
+            $plugins[] = $this->getPluginOfReport($report);
         }
         return array_unique($plugins);
+    }
+    
+    private function getPluginOfReport($report)
+    {
+        $parts = explode('_', $report);
+        return $parts[0];
     }
 }
