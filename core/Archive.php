@@ -205,7 +205,7 @@ class Piwik_Archive
      * 
      * @var array
      */
-    public $periods;
+    private $periods;
     
     /**
      * Segment applied to the visits set.
@@ -794,6 +794,12 @@ class Piwik_Archive
                         }
                         $report = $pluginOrAll.'_reportsAndMetrics';
                         
+                        $doneFlag = Piwik_ArchiveProcessing::getDoneStringFlagFor( // TODO: important logic! need to note why. move to private function?
+                            $this->segment, $period->getLabel(), $report);
+                        if (!isset($this->idarchives[$doneFlag])) {
+                            $this->idarchives[$doneFlag] = array();
+                        }
+                        
                         $processing->init();
                         $processing->setRequestedReport($report);
                         
@@ -808,8 +814,6 @@ class Piwik_Archive
                             continue;
                         }
                         
-                        $doneFlag = Piwik_ArchiveProcessing::getDoneStringFlagFor(
-                            $this->segment, $period->getLabel(), $report);
                         $this->idarchives[$doneFlag][$periodStr][] = $idArchive;
                     }
                 }
@@ -827,6 +831,14 @@ class Piwik_Archive
     private function cacheArchiveIdsWithoutLaunching($requestedReports) // TODO: change docs everywhere requestedreport is not used
     {
         $periodType = $this->getPeriodLabel();
+        
+        // TODO: important logic! need to note why. move to private function?
+        foreach ($requestedReports as $report) {
+            $doneFlag = Piwik_ArchiveProcessing::getDoneStringFlagFor($this->segment, $periodType, $report);
+            if (!isset($this->idarchives[$doneFlag])) {
+                $this->idarchives[$doneFlag] = array();
+            }
+        }
         
         $getArchiveIdsSql = "SELECT idsite, name, date1, date2, MAX(idarchive) as idarchive
                                FROM %s
