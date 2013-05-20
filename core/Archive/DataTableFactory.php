@@ -45,9 +45,9 @@ class Piwik_Archive_DataTableFactory
     private $addMetadataSubtableId = false;
     
     /**
-     * @see Piwik_Archive_DataCollection::$sites.
+     * @see Piwik_Archive_DataCollection::$sitesId.
      */
-    private $sites;
+    private $sitesId;
     
     /**
      * @see Piwik_Archive_DataCollection::$periods.
@@ -69,11 +69,11 @@ class Piwik_Archive_DataTableFactory
     /**
      * Constructor.
      */
-    public function __construct($dataNames, $dataType, $sites, $periods, $defaultRow)
+    public function __construct($dataNames, $dataType, $sitesId, $periods, $defaultRow)
     {
         $this->dataNames = $dataNames;
         $this->dataType = $dataType;
-        $this->sites = $sites;
+        $this->sitesId = $sitesId;
         $this->periods = $periods;
         $this->defaultRow = $defaultRow;
     }
@@ -100,6 +100,11 @@ class Piwik_Archive_DataTableFactory
      */
     public function useSubtable($idSubtable)
     {
+        if (count($this->dataNames) !== 1) {
+            throw new Exception("Piwik_Archive_DataTableFactory: Getting subtables for multiple records in one"
+                               . " archive query is not currently supported.");
+        }
+        
         $this->idSubtable = $idSubtable;
     }
     
@@ -152,42 +157,67 @@ class Piwik_Archive_DataTableFactory
             return new Piwik_DataTable();
         }
         
-        if (count($this->dataNames) === 1) { // only one record
-            $recordName = reset($this->dataNames);
-            if ($this->idSubtable !== null) {
-                $recordName .= '_' . $this->idSubtable;
-            }
-            
-            if (!empty($blobRow[$recordName])) {
-                $table = Piwik_DataTable::fromBlob($blobRow[$recordName]);
-            } else {
-                $table = new Piwik_DataTable();
-            }
-            
-            // set metadata
-            foreach ($blobRow as $name => $value) {
-                if (substr($name, 0, 1) == '_') {
-                    $table->setMetadata(substr($name, 1), $value);
-                }
-            }
-            
-            if ($this->expandDataTable) {
-                $table->enableRecursiveFilters();
-                $this->setSubtables($table, $blobRow);
-            }
-            
-            return $table;
-        } else { // multiple records, index by name
-            $table = new Piwik_DataTable_Array();
-            $table->setKeyName('recordName');
-            
-            foreach ($blobRow as $name => $blob) {
-                $newTable = Piwik_DataTable::fromBlob($blob);
-                $table->addTable($newTable, $name);
-            }
-            
-            return $table;
+        if (count($this->dataNames) === 1) {
+            return $this->makeDataTableFromSingleBlob($blobRow);
+        } else {
+            return $this->makeIndexedByRecordNameDataTable($blobRow);
         }
+    }
+    
+    /**
+     * Creates a DataTable for one record from an archive data row.
+     * 
+     * @see makeFromBlobRow
+     * 
+     * @param array $blobRow
+     * @return Piwik_DataTable
+     */
+    private function makeDataTableFromSingleBlob($blobRow)
+    {
+        $recordName = reset($this->dataNames);
+        if ($this->idSubtable !== null) {
+            $recordName .= '_' . $this->idSubtable;
+        }
+        
+        if (!empty($blobRow[$recordName])) {
+            $table = Piwik_DataTable::fromSerializedArray($blobRow[$recordName]);
+        } else {
+            $table = new Piwik_DataTable();
+        }
+        
+        // set table metadata
+        $table->metadata = Piwik_Archive_DataCollection::getDataRowMetadata($blobRow);
+        
+        if ($this->expandDataTable) {
+            $table->enableRecursiveFilters();
+            $this->setSubtables($table, $blobRow);
+        }
+        
+        return $table;
+    }
+    
+    /**
+     * Creates a DataTable for every record in an archive data row and puts them
+     * in a DataTable_Array instance.
+     * 
+     * @param array $blobRow
+     * @return Piwik_DataTable_Array
+     */
+    private function makeIndexedByRecordNameDataTable($blobRow)
+    {
+        $table = new Piwik_DataTable_Array();
+        $table->setKeyName('recordName');
+        
+        $tableMetadata = Piwik_Archive_DataCollection::getDataRowMetadata($blobRow);
+        
+        foreach ($blobRow as $name => $blob) {
+            $newTable = Piwik_DataTable::fromSerializedArray($blob);
+            $newTable->metadata = $tableMetadata;
+            
+            $table->addTable($newTable, $name);
+        }
+        
+        return $table;
     }
     
     /**
@@ -237,22 +267,18 @@ class Piwik_Archive_DataTableFactory
             $table = new Piwik_DataTable_Simple();
             
             if (!empty($data)) {
-                $row = new Piwik_DataTable_Row();
-                foreach ($data as $name => $value) {
-                    if (Piwik_Archive_DataCollection::isMetadataName($name)) {
-                        $table->setMetadata(Piwik_Archive_DataCollection::getRealMetadataName($name), $value);
-                    } else {
-                        $row->setColumn($name, $value);
-                    }
-                }
-                $table->addRow($row);
+                $table->metadata = Piwik_Archive_DataCollection::getDataRowMetadata($data);
+                
+                Piwik_Archive_DataCollection::removeMetadataFromDataRow($data);
+                
+                $table->addRow(new Piwik_DataTable_Row(array(Piwik_DataTable_Row::COLUMNS => $data)));
             }
             
             $result = $table;
         }
         
         if (!isset($keyMetadata['site'])) {
-            $keyMetadata['site'] = reset($this->sites);
+            $keyMetadata['site'] = reset($this->sitesId);
         }
         
         if (!isset($keyMetadata['period'])) {
@@ -291,7 +317,7 @@ class Piwik_Archive_DataTableFactory
             
             $blobName = $dataName."_".$sid;
             if (isset($blobRow[$blobName])) {
-                $subtable = Piwik_DataTable::fromBlob($blobRow[$blobName]);
+                $subtable = Piwik_DataTable::fromSerializedArray($blobRow[$blobName]);
                 $this->setSubtables($subtable, $blobRow);
                 
                 // we edit the subtable ID so that it matches the newly table created in memory

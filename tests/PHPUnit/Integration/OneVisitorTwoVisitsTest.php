@@ -174,6 +174,27 @@ class Test_Piwik_Integration_OneVisitorTwoVisits extends IntegrationTestCase
 
         $this->assertTrue($foundSubtable, "Actions_actions subtable was not loaded");
     }
+    
+    /**
+     * Test that restricting the number of sites to those viewable to another login
+     * works when building an archive query object.
+     * 
+     * @group        Integration
+     * @group        OneVisitorTwoVisits
+     */
+    public function testArchiveSitesWhenRestrictingToLogin()
+    {
+        try
+        {
+            Piwik_Archive::build(
+                'all', 'day', self::$fixture->dateTime, $segment = false, $_restrictToLogin = 'anotherLogin');
+            $this->fail("Restricting sites to invalid login did not return 0 sites.");
+        }
+        catch (Exception $ex)
+        {
+            // pass
+        }
+    }
 }
 
 Test_Piwik_Integration_OneVisitorTwoVisits::$fixture = new Test_Piwik_Fixture_OneVisitorTwoVisits();

@@ -44,8 +44,8 @@ class Piwik_Archive_DataCollection
      *    'nb_actions' => 2
      * )
      * 
-     * Elements in data rows that are prepended with an underscore (eg, _ts_archived)
-     * are treated as DataTable metadata.
+     * There is a special element '_metadata' in data rows that holds values treated
+     * as DataTable metadata.
      */
     private $data = array();
     
@@ -76,7 +76,7 @@ class Piwik_Archive_DataCollection
      * 
      * @var array
      */
-    private $sites;
+    private $sitesId;
     
     /**
      * The list of all periods that were queried for. Each period is associated with
@@ -96,11 +96,11 @@ class Piwik_Archive_DataCollection
      * 
      * @param array $dataNames @see $this->dataNames
      * @param string $dataType @see $this->dataType
-     * @param array $sites @see $this->sites
+     * @param array $sitesId @see $this->sitesId
      * @param array $periods @see $this->periods
      * @param array $defaultRow @see $this->defaultRow
      */
-    public function __construct($dataNames, $dataType, $sites, $periods, $defaultRow = null)
+    public function __construct($dataNames, $dataType, $sitesId, $periods, $defaultRow = null)
     {
         $this->dataNames = $dataNames;
         $this->dataType = $dataType;
@@ -108,7 +108,7 @@ class Piwik_Archive_DataCollection
         if ($defaultRow === null) {
             $defaultRow = array_fill_keys($dataNames, 0);
         }
-        $this->sites = $sites;
+        $this->sitesId = $sitesId;
         $this->periods = $periods;
         $this->defaultRow = $defaultRow;
     }
@@ -144,7 +144,7 @@ class Piwik_Archive_DataCollection
     public function addMetadata($idSite, $period, $name, $value)
     {
         $row = &$this->get($idSite, $period);
-        $row['_'.$name] = $value;
+        $row['_metadata'][$name] = $value;
     }
     
     /**
@@ -186,7 +186,7 @@ class Piwik_Archive_DataCollection
     public function getDataTable($resultIndices)
     {
         $dataTableFactory = new Piwik_Archive_DataTableFactory(
-            $this->dataNames, $this->dataType, $this->sites, $this->periods, $this->defaultRow);
+            $this->dataNames, $this->dataType, $this->sitesId, $this->periods, $this->defaultRow);
         
         $index = $this->getArray($resultIndices);
         return $dataTableFactory->make($index, $resultIndices);
@@ -222,7 +222,7 @@ class Piwik_Archive_DataCollection
         }
         
         $dataTableFactory = new Piwik_Archive_DataTableFactory(
-            $this->dataNames, 'blob', $this->sites, $this->periods, $this->defaultRow);
+            $this->dataNames, 'blob', $this->sitesId, $this->periods, $this->defaultRow);
         $dataTableFactory->expandDataTable($addMetadataSubtableId);
         $dataTableFactory->useSubtable($idSubtable);
         
@@ -231,28 +231,27 @@ class Piwik_Archive_DataCollection
     }
     
     /**
-     * Returns true if $name is a metadata name or not.
+     * Returns metadata for a data row.
      * 
-     * Metadata is stored in archive data rows w/ underscores prepended to the actual
-     * metadata name.
-     * 
-     * @param string $name
-     * @return bool
+     * @param array $data The data row.
      */
-    public static function isMetadataName($name)
+    public static function getDataRowMetadata($data)
     {
-        return substr($name, 0, 1) == '_';
+        if (isset($data['_metadata'])) {
+            return $data['_metadata'];
+        } else {
+            return array();
+        }
     }
     
     /**
-     * Returns the real metadata name for an archive data metadata name.
+     * Removes all table metadata from a data row.
      * 
-     * @param string $name
-     * @return string
+     * @param array $data The data row.
      */
-    public static function getRealMetadataName($name)
+    public static function removeMetadataFromDataRow(&$data)
     {
-        return substr($name, 1);
+        unset($data['_metadata']);
     }
     
     /**
@@ -270,7 +269,7 @@ class Piwik_Archive_DataCollection
         if (!empty($indexKeys)) {
             $index = array_shift($indexKeys);
             if ($index == 'site') {
-                foreach ($this->sites as $idSite) {
+                foreach ($this->sitesId as $idSite) {
                     $result[$idSite] = $this->createEmptyIndex($indexKeys);
                 }
             } else if ($index == 'period') {
@@ -318,8 +317,8 @@ class Piwik_Archive_DataCollection
                 $result['site'] = $idSite;
             } else if ($name == 'period') {
                 $result['period'] = $period;
-            } else {
-                $result[$name] = $row['_'.$name];
+            } else if (isset($row['_metadata'][$name])) {
+                $result[$name] = $row['_metadata'][$name];
             }
         }
         return $result;

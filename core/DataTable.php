@@ -1498,15 +1498,15 @@ class Piwik_DataTable
     }
     
     /**
-     * Creates a new DataTable instance from a blob string.
+     * Creates a new DataTable instance from a serialize()'d array of rows.
      * 
-     * @param string $blob
+     * @param string $data
      * @return Piwik_DataTable
      */
-    public static function fromBlob($blob)
+    public static function fromSerializedArray($data)
     {
         $result = new Piwik_DataTable();
-        $result->addRowsFromSerializedArray($blob);
+        $result->addRowsFromSerializedArray($data);
         return $result;
     }
 }

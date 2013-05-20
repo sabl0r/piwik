@@ -302,6 +302,36 @@ class Piwik_Archive
         $this->idarchives = array();
         $this->processingCache = array();
     }
+    
+    /**
+     * Returns the IDs of sites we are querying archive data for.
+     * 
+     * @return array
+     */
+    public function getSiteIds()
+    {
+        return $this->siteIds;
+    }
+    
+    /**
+     * Returns the periods we are querying archive data for.
+     * 
+     * @return array
+     */
+    public function getPeriods()
+    {
+        return $this->periods;
+    }
+    
+    /**
+     * Returns the segment used to limit the visit set.
+     * 
+     * @return Piwik_Segment|null
+     */
+    public function getSegment()
+    {
+        return $this->segment;
+    }
 
     /**
      * Builds an Archive object using query parameter values.
@@ -746,6 +776,7 @@ class Piwik_Archive
      * This function will launch the archiving process for each period/site/plugin if 
      * metrics/reports have not been calculated/archived already.
      * 
+     * @param array $archiveGroups @see getArchiveGroupOfReport
      * @param array $requestedReports @see getRequestedReport
      */
     private function cacheArchiveIdsAfterLaunching($archiveGroups, $requestedReports)
@@ -794,11 +825,9 @@ class Piwik_Archive
                         }
                         $report = $pluginOrAll.'_reportsAndMetrics';
                         
-                        $doneFlag = Piwik_ArchiveProcessing::getDoneStringFlagFor( // TODO: important logic! need to note why. move to private function?
+                        $doneFlag = Piwik_ArchiveProcessing::getDoneStringFlagFor(
                             $this->segment, $period->getLabel(), $report);
-                        if (!isset($this->idarchives[$doneFlag])) {
-                            $this->idarchives[$doneFlag] = array();
-                        }
+                        $this->initializeArchiveIdCache($doneFlag);
                         
                         $processing->init();
                         $processing->setRequestedReport($report);
@@ -828,16 +857,14 @@ class Piwik_Archive
      * 
      * @param array $requestedReports @see getRequestedReport
      */
-    private function cacheArchiveIdsWithoutLaunching($requestedReports) // TODO: change docs everywhere requestedreport is not used
+    private function cacheArchiveIdsWithoutLaunching($requestedReports)
     {
         $periodType = $this->getPeriodLabel();
         
-        // TODO: important logic! need to note why. move to private function?
+        // initialize archive ID cache for each report
         foreach ($requestedReports as $report) {
             $doneFlag = Piwik_ArchiveProcessing::getDoneStringFlagFor($this->segment, $periodType, $report);
-            if (!isset($this->idarchives[$doneFlag])) {
-                $this->idarchives[$doneFlag] = array();
-            }
+            $this->initializeArchiveIdCache($doneFlag);
         }
         
         $getArchiveIdsSql = "SELECT idsite, name, date1, date2, MAX(idarchive) as idarchive
@@ -1026,6 +1053,36 @@ class Piwik_Archive
         return $array;
     }
     
+    /**
+     * Initializes the archive ID cache ($this->idarchives) for a particular 'done' flag.
+     * 
+     * It is necessary that each archive ID caching function call this method for each
+     * unique 'done' flag it encounters, since the getArchiveIds function determines
+     * whether archiving should be launched based on whether $this->idarchives has a
+     * an entry for a specific 'done' flag.
+     * 
+     * If this function is not called, then periods with no visits will not add
+     * entries to the cache. If the archive is used again, SQL will be executed to
+     * try and find the archive IDs even though we know there are none.
+     */
+    private function initializeArchiveIdCache($doneFlag)
+    {
+        if (!isset($this->idarchives[$doneFlag])) {
+            $this->idarchives[$doneFlag] = array();
+        }
+    }
+    
+    /**
+     * Returns the archiving group identifier of a report.
+     * 
+     * More than one plugin can be called at once. In such a case we don't want to
+     * launch archiving three times for three plugins if doing it once is enough,
+     * so getArchiveIds makes sure to get the archive group of all reports.
+     * 
+     * If the period isn't a range, then all plugins' archiving code is executed.
+     * If the period is a range, then archiving code is executed individually for
+     * each plugin.
+     */
     private function getArchiveGroupOfReport($report)
     {
         if ($this->getPeriodLabel() != 'range') {

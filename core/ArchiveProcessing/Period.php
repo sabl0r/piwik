@@ -46,7 +46,7 @@ class Piwik_ArchiveProcessing_Period extends Piwik_ArchiveProcessing
     public function setPeriod( Piwik_Period $period ) 
     {
         parent::setPeriod($period);
-        $this->archive = null; // make sure archive is recreated
+        $this->resetSubperiodArchiveQuery();
     }
     
     /**
@@ -57,7 +57,7 @@ class Piwik_ArchiveProcessing_Period extends Piwik_ArchiveProcessing
     public function setSegment( Piwik_Segment $segment) 
     {
         parent::setSegment($segment);
-        $this->archive = null; // make sure archive is recreated
+        $this->resetSubperiodArchiveQuery();
     }
     
     /**
@@ -68,7 +68,7 @@ class Piwik_ArchiveProcessing_Period extends Piwik_ArchiveProcessing
     public function setSite( Piwik_Site $site )
     {
         parent::setSite($site);
-        $this->archive = null; // make sure archive is recreated
+        $this->resetSubperiodArchiveQuery();
     }
 
     /**
@@ -399,12 +399,8 @@ class Piwik_ArchiveProcessing_Period extends Piwik_ArchiveProcessing
 
         $numericTable = $this->tableArchiveNumeric->getTableName();
         self::doPurgeOutdatedArchives($numericTable, $this->isArchiveTemporary());
-
-        if (!isset($this->archive)) {
-            return;
-        }
-        destroy($this->archive);
-        $this->archive = null;
+        
+        $this->resetSubperiodArchiveQuery();
     }
 
     const FLAG_TABLE_PURGED = 'lastPurge_';
@@ -500,6 +496,14 @@ class Piwik_ArchiveProcessing_Period extends Piwik_ArchiveProcessing
             // these tables will be OPTIMIZEd daily in a scheduled task, to claim lost space
         } else {
             Piwik::log("Purging temporary archives: skipped.");
+        }
+    }
+    
+    private function resetSubperiodArchiveQuery()
+    {
+        if ($this->archive !== null) {
+            destroy($this->archive);
+            $this->archive = null;
         }
     }
 }

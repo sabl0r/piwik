@@ -227,31 +227,6 @@ abstract class Piwik_Period
         $this->subperiods[] = $period;
     }
 
-    /**
-     * Returns a string representing the current period
-     * Given param will be used to format the returned value
-     *
-     * @param string $format
-     *
-     * @return array
-     */
-    public function toString($format = "Y-m-d")
-    {
-        if (!$this->subperiodsProcessed) {
-            $this->generate();
-        }
-        $dateString = array();
-        foreach ($this->subperiods as $period) {
-            $dateString[] = $period->toString($format);
-        }
-        return $dateString;
-    }
-
-    public function __toString()
-    {
-        return implode(",", $this->toString());
-    }
-
     public function get($part = null)
     {
         if (!$this->subperiodsProcessed) {
