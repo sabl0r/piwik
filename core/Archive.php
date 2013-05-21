@@ -259,6 +259,13 @@ class Piwik_Archive
     private $forceIndexedByDate;
     
     /**
+     * Data Access Layer object.
+     * 
+     * @var Piwik_DataAccess_ArchiveQuery
+     */
+    private $dataAccess;
+    
+    /**
      * Cache of Piwik_ArchiveProcessing instances used when launching the archiving
      * process.
      * 
@@ -289,6 +296,7 @@ class Piwik_Archive
         $this->segment = $segment;
         $this->forceIndexedBySite = $forceIndexedBySite;
         $this->forceIndexedByDate = $forceIndexedByDate;
+        $this->dataAccess = new Piwik_DataAccess_ArchiveQuery();
     }
     
     /**
@@ -646,8 +654,6 @@ class Piwik_Archive
      */
     private function get($archiveNames, $archiveDataType, $idSubtable = null)
     {
-        $archiveTableType = 'archive_'.$archiveDataType;
-        
         if (!is_array($archiveNames)) {
             $archiveNames = array($archiveNames);
         }
@@ -664,54 +670,26 @@ class Piwik_Archive
         $result = new Piwik_Archive_DataCollection(
             $archiveNames, $archiveDataType, $this->siteIds, $this->periods, $defaultRow = null);
         
-        // get the archive IDs
         $archiveIds = $this->getArchiveIds($archiveNames);
         if (empty($archiveIds)) {
             return $result;
         }
         
-        // create the SQL to select archive data
-        $inNames = Piwik_Common::getSqlStringFieldsArray($archiveNames);
-        if ($idSubtable == 'all') {
-            $name = reset($archiveNames);
+        $archiveData = $this->dataAccess->getArchiveData($archiveIds, $archiveNames, $archiveDataType, $idSubtable);
+        foreach ($archiveData as $row) {
+            // values are grouped by idsite (site ID), date1-date2 (date range), then name (field name)
+            $idSite = $row['idsite'];
+            $periodStr = $row['date1'].",".$row['date2'];
             
-            // select blobs w/ name like "$name_[0-9]+" w/o using RLIKE
-            $nameEnd = strlen($name) + 2;
-            $getValuesSql = "SELECT value, name, idsite, date1, date2, ts_archived
-                                FROM %s
-                                WHERE idarchive IN (%s)
-                                  AND (name = ? OR
-                                            (name LIKE ? AND SUBSTRING(name, $nameEnd, 1) >= '0'
-                                                         AND SUBSTRING(name, $nameEnd, 1) <= '9') )";
-            $bind = array($name, $name.'%');
-        } else {
-            $getValuesSql = "SELECT name, value, idsite, date1, date2, ts_archived
-                               FROM %s
-                              WHERE idarchive IN (%s)
-                                AND name IN ($inNames)";
-            $bind = array_values($archiveNames);
-        }
-        
-        // get data from every table we're querying
-        foreach ($archiveIds as $tableMonth => $ids) {
-            $table = Piwik_Common::prefixTable($archiveTableType."_".$tableMonth);
-            $sql = sprintf($getValuesSql, $table, implode(',', $ids));
-            
-            foreach (Piwik_FetchAll($sql, $bind) as $row) {
-                // values are grouped by idsite (site ID), date1-date2 (date range), then name (field name)
-                $idSite = $row['idsite'];
-                $periodStr = $row['date1'].",".$row['date2'];
-                
-                if ($archiveTableType == 'archive_numeric') {
-                    $value = $this->formatNumericValue($row['value']);
-                } else {
-                    $value = $this->uncompress($row['value']);
-                    $result->addMetadata($idSite, $periodStr, 'ts_archived', $row['ts_archived']);
-                }
-                
-                $resultRow = &$result->get($idSite, $periodStr);
-                $resultRow[$row['name']] = $value;
+            if ($archiveDataType == 'numeric') {
+                $value = $this->formatNumericValue($row['value']);
+            } else {
+                $value = $this->uncompress($row['value']);
+                $result->addMetadata($idSite, $periodStr, 'ts_archived', $row['ts_archived']);
             }
+            
+            $resultRow = &$result->get($idSite, $periodStr);
+            $resultRow[$row['name']] = $value;
         }
         
         return $result;
@@ -760,10 +738,8 @@ class Piwik_Archive
             }
             
             foreach ($this->idarchives[$doneFlag] as $dateRange => $idarchives) {
-                $tableMonth = $this->getTableMonthFromDateRange($dateRange);
-                
                 foreach ($idarchives as $id) {
-                    $idArchivesByMonth[$tableMonth][] = $id;
+                    $idArchivesByMonth[$dateRange][] = $id;
                 }
             }
         }
@@ -784,67 +760,65 @@ class Piwik_Archive
         $today = Piwik_Date::today();
         
         // for every individual query permutation, launch the archiving process and get the archive ID
-        foreach ($this->getPeriodsByTableMonth() as $tableMonth => $periods) {
-            foreach ($periods as $period) {
-                $periodStr = $period->getRangeString();
-                
-                $twoDaysBeforePeriod = $period->getDateStart()->subDay(2);
-                $twoDaysAfterPeriod = $period->getDateEnd()->addDay(2);
-                
-                foreach ($this->siteIds as $idSite) {
-                    $site = new Piwik_Site($idSite);
-                    
-                    // if the END of the period is BEFORE the website creation date
-                    // we already know there are no stats for this period
-                    // we add one day to make sure we don't miss the day of the website creation
-                    if ($twoDaysAfterPeriod->isEarlier($site->getCreationDate())) {
-                        $archiveDesc = $this->getArchiveDescriptor($idSite, $period);
-                        Piwik::log("Archive $archiveDesc skipped, archive is before the website was created.");
-                        continue;
-                    }
+        foreach ($this->periods as $period) {
+            $periodStr = $period->getRangeString();
             
-                    // if the starting date is in the future we know there is no visit
-                    if ($twoDaysBeforePeriod->isLater($today)) {
-                        $archiveDesc = $this->getArchiveDescriptor($idSite, $period);
-                        Piwik::log("Archive $archiveDesc skipped, archive is after today.");
+            $twoDaysBeforePeriod = $period->getDateStart()->subDay(2);
+            $twoDaysAfterPeriod = $period->getDateEnd()->addDay(2);
+            
+            foreach ($this->siteIds as $idSite) {
+                $site = new Piwik_Site($idSite);
+                
+                // if the END of the period is BEFORE the website creation date
+                // we already know there are no stats for this period
+                // we add one day to make sure we don't miss the day of the website creation
+                if ($twoDaysAfterPeriod->isEarlier($site->getCreationDate())) {
+                    $archiveDesc = $this->getArchiveDescriptor($idSite, $period);
+                    Piwik::log("Archive $archiveDesc skipped, archive is before the website was created.");
+                    continue;
+                }
+        
+                // if the starting date is in the future we know there is no visit
+                if ($twoDaysBeforePeriod->isLater($today)) {
+                    $archiveDesc = $this->getArchiveDescriptor($idSite, $period);
+                    Piwik::log("Archive $archiveDesc skipped, archive is after today.");
+                    continue;
+                }
+                
+                // prepare the ArchiveProcessing instance
+                $processing = $this->getArchiveProcessingInstance($period);
+                $processing->setSite($site);
+                $processing->setPeriod($period);
+                $processing->setSegment($this->segment);
+                
+                $processing->isThereSomeVisits = null;
+                
+                // process for each requested report as well
+                foreach ($archiveGroups as $pluginOrAll) {
+                    if ($pluginOrAll == 'all') {
+                        $pluginOrAll = $this->getPluginForReport(reset($requestedReports));
+                    }
+                    $report = $pluginOrAll.'_reportsAndMetrics';
+                    
+                    $doneFlag = Piwik_ArchiveProcessing::getDoneStringFlagFor(
+                        $this->segment, $period->getLabel(), $report);
+                    $this->initializeArchiveIdCache($doneFlag);
+                    
+                    $processing->init();
+                    $processing->setRequestedReport($report);
+                    
+                    // launch archiving if the requested data hasn't been archived
+                    $idArchive = $processing->loadArchive();
+                    if (empty($idArchive)) {
+                        $processing->launchArchiving();
+                        $idArchive = $processing->getIdArchive();
+                    }
+                    
+                    if (!$processing->isThereSomeVisits()) {
                         continue;
                     }
                     
-                    // prepare the ArchiveProcessing instance
-                    $processing = $this->getArchiveProcessingInstance($period);
-                    $processing->setSite($site);
-                    $processing->setPeriod($period);
-                    $processing->setSegment($this->segment);
-                    
-                    $processing->isThereSomeVisits = null;
-                    
-                    // process for each requested report as well
-                    foreach ($archiveGroups as $pluginOrAll) {
-                        if ($pluginOrAll == 'all') {
-                            $pluginOrAll = $this->getPluginForReport(reset($requestedReports));
-                        }
-                        $report = $pluginOrAll.'_reportsAndMetrics';
-                        
-                        $doneFlag = Piwik_ArchiveProcessing::getDoneStringFlagFor(
-                            $this->segment, $period->getLabel(), $report);
-                        $this->initializeArchiveIdCache($doneFlag);
-                        
-                        $processing->init();
-                        $processing->setRequestedReport($report);
-                        
-                        // launch archiving if the requested data hasn't been archived
-                        $idArchive = $processing->loadArchive();
-                        if (empty($idArchive)) {
-                            $processing->launchArchiving();
-                            $idArchive = $processing->getIdArchive();
-                        }
-                        
-                        if (!$processing->isThereSomeVisits()) {
-                            continue;
-                        }
-                        
-                        $this->idarchives[$doneFlag][$periodStr][] = $idArchive;
-                    }
+                    $this->idarchives[$doneFlag][$periodStr][] = $idArchive;
                 }
             }
         }
@@ -861,81 +835,22 @@ class Piwik_Archive
     {
         $periodType = $this->getPeriodLabel();
         
+        $idarchivesByReport = $this->dataAccess->getArchiveIds(
+            $this->siteIds, $this->periods, $this->segment, $requestedReports);
+        
         // initialize archive ID cache for each report
         foreach ($requestedReports as $report) {
             $doneFlag = Piwik_ArchiveProcessing::getDoneStringFlagFor($this->segment, $periodType, $report);
             $this->initializeArchiveIdCache($doneFlag);
         }
-        
-        $getArchiveIdsSql = "SELECT idsite, name, date1, date2, MAX(idarchive) as idarchive
-                               FROM %s
-                              WHERE period = ?
-                                AND %s
-                                AND ".$this->getNameCondition($requestedReports)."
-                                AND idsite IN (".implode(',', $this->siteIds).")
-                           GROUP BY idsite, date1, date2";
-        
-        // for every month within the archive query, select from numeric table
-        foreach ($this->getPeriodsByTableMonth() as $tableMonth => $subPeriods) {
-            $firstPeriod = $subPeriods[0];
-            $table = Piwik_Common::prefixTable("archive_numeric_$tableMonth");
-            
-            Piwik_TablePartitioning_Monthly::createArchiveTablesIfAbsent($firstPeriod);
-            
-            // if looking for a range archive. NOTE: we assume there's only one period if its a range.
-            $bind = array($firstPeriod->getId());
-            if ($firstPeriod instanceof Piwik_Period_Range) {
-                $dateCondition = "date1 = ? AND date2 = ?";
-                $bind[] = $firstPeriod->getDateStart()->toString('Y-m-d');
-                $bind[] = $firstPeriod->getDateEnd()->toString('Y-m-d');
-            } else { // if looking for a normal period
-                $dateStrs = array();
-                foreach ($subPeriods as $period) {
-                    $dateStrs[] = $period->getDateStart()->toString('Y-m-d');
+       
+        foreach ($idarchivesByReport as $doneFlag => $idarchivesByDate) {
+            foreach ($idarchivesByDate as $dateRange => $idarchives) {
+                foreach ($idarchives as $idarchive) {
+                    $this->idarchives[$doneFlag][$dateRange][] = $idarchive;
                 }
-                
-                $dateCondition = "date1 IN ('".implode("','", $dateStrs)."')";
-            }
-            
-            $sql = sprintf($getArchiveIdsSql, $table, $dateCondition);
-            
-            // get the archive IDs
-            foreach (Piwik_FetchAll($sql, $bind) as $row) {
-                $dateStr = $row['date1'].",".$row['date2'];
-                
-                $doneFlag = Piwik_ArchiveProcessing::getDoneStringFlagFor($this->segment, $periodType, $row['name']);
-                $this->idarchives[$doneFlag][$dateStr][] = $row['idarchive'];
             }
         }
-    }
-    
-    /**
-     * Returns the SQL condition used to find successfully completed archives that
-     * this instance is querying for.
-     * 
-     * @param array $requestedReports @see getRequestedReport
-     * @return string
-     */
-    private function getNameCondition($requestedReports)
-    {
-        // the flags used to tell how the archiving process for a specific archive was completed,
-        // if it was completed
-        $doneFlags = array();
-        $periodType = $this->getPeriodLabel();
-        foreach ($requestedReports as $report) {
-            $done = Piwik_ArchiveProcessing::getDoneStringFlagFor($this->segment, $periodType, $report);
-            $donePlugins = Piwik_ArchiveProcessing::getDoneStringFlagFor($this->segment, $periodType, $report, true);
-            
-            $doneFlags[$done] = $done;
-            $doneFlags[$donePlugins] = $donePlugins;
-        }
-
-        $allDoneFlags = "'".implode("','", $doneFlags)."'";
-        
-        // create the SQL to find archives that are DONE
-        return "(name IN ($allDoneFlags)) AND
-                (value = '".Piwik_ArchiveProcessing::DONE_OK."' OR
-                 value = '".Piwik_ArchiveProcessing::DONE_OK_TEMPORARY."')";
     }
     
     /**
@@ -953,40 +868,9 @@ class Piwik_Archive
         return $this->processingCache[$label];
     }
     
-    /**
-     * Returns the periods of the archives this instance is querying for grouped by
-     * by year & month.
-     * 
-     * @return array The result will be an array of Piwik_Period instances, where each
-     *               instance is associated w/ a string describing the year and month,
-     *               eg, 2012_01. The format is the same format used in archive database
-     *               table names.
-     */
-    private function getPeriodsByTableMonth()
-    {
-        $result = array();
-        foreach ($this->periods as $period) {
-            $tableMonth = $period->getDateStart()->toString('Y_m');
-            $result[$tableMonth][] = $period;
-        }
-        return $result;
-    }
-    
     private function getPeriodLabel()
     {
         return reset($this->periods)->getLabel();
-    }
-    
-    /**
-     * Returns the table & month that an archive for a specific date range is stored
-     * in.
-     * 
-     * @param string $dateRange eg, "2012-01-01,2012-01-02"
-     * @return string eg, "2012_01"
-     */
-    private function getTableMonthFromDateRange($dateRange)
-    {
-        return str_replace('-', '_', substr($dateRange, 0, 7));
     }
     
     /**
