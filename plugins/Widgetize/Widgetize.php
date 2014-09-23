@@ -28,6 +28,8 @@ class Widgetize extends \Piwik\Plugin
     {
         $jsFiles[] = "libs/jquery/jquery.truncate.js";
         $jsFiles[] = "libs/bower_components/jquery.scrollTo/jquery.scrollTo.min.js";
+        $jsFiles[] = "libs/jquery/jquery.postmessage.js";
+        $jsFiles[] = "libs/jquery/jquery.resize.js";
         $jsFiles[] = "plugins/Morpheus/javascripts/piwikHelper.js";
         $jsFiles[] = "plugins/CoreHome/javascripts/dataTable.js";
         $jsFiles[] = "plugins/Dashboard/javascripts/widgetMenu.js";

@@ -14,5 +14,27 @@
         <div class="widget">
             {{ content|raw }}
         </div>
+		<script>
+
+		$(function(){
+			   var url = '';
+			   var nr = -1;
+
+			   var sendSize = function(){
+					   $.postMessage(nr + ':' + $('body').outerHeight(true), url, parent);
+			   };
+
+			   $('body').resize(function(e){ sendSize(); });
+
+			   $.receiveMessage(function(e){
+					   if(e.data.match(/getSize:([0-9]+):(.+)/)){
+							   nr = RegExp.$1;
+							   url = decodeURIComponent(RegExp.$2);
+							   sendSize();
+					   }
+			   });
+		});
+
+		</script>
     </body>
 </html>
